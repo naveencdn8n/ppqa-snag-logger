@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_enums.dart';
 
 class SnagModel {
@@ -68,5 +69,46 @@ class SnagModel {
     final d = createdAt;
     return DateTime(d.year, d.month, d.day)
         .subtract(Duration(days: d.weekday - 1));
+  }
+
+  // ─── Firestore serialization ───────────────────────────────────────────────
+
+  /// Converts this snag to a Firestore-compatible map.
+  /// Note: [id] is NOT included — Firestore uses the document ID.
+  Map<String, dynamic> toMap() {
+    return {
+      'createdBy': createdBy,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'location': location.name,
+      'floorNo': floorNo,
+      'flatNo': flatNo.name,
+      'element': element.name,
+      'trade': trade.name,
+      'defectDescription': defectDescription,
+      'severity': severity.name,
+      'status': status.name,
+      'evidenceImageUrl': evidenceImagePath,
+      'notes': notes,
+    };
+  }
+
+  /// Constructs a [SnagModel] from a Firestore document snapshot.
+  factory SnagModel.fromFirestore(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return SnagModel(
+      id: doc.id,
+      createdBy: d['createdBy'] as String? ?? '',
+      createdAt: (d['createdAt'] as Timestamp).toDate(),
+      location: SnagLocation.values.byName(d['location'] as String),
+      floorNo: d['floorNo'] as int,
+      flatNo: FlatNo.values.byName(d['flatNo'] as String),
+      element: SnagElement.values.byName(d['element'] as String),
+      trade: SnagTrade.values.byName(d['trade'] as String),
+      defectDescription: d['defectDescription'] as String,
+      severity: SnagSeverity.values.byName(d['severity'] as String),
+      status: SnagStatus.values.byName(d['status'] as String),
+      evidenceImagePath: d['evidenceImageUrl'] as String?,
+      notes: d['notes'] as String?,
+    );
   }
 }

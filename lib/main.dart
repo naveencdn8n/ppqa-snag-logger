@@ -1,6 +1,8 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'firebase_options.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
@@ -9,7 +11,11 @@ import 'screens/defects_list_screen.dart';
 import 'screens/log_snag_screen.dart';
 import 'screens/report_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(),

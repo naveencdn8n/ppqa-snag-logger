@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+
+import '../models/app_enums.dart';
 import '../models/snag_model.dart';
 import '../models/user_model.dart';
-import '../models/app_enums.dart';
+import '../services/firestore_service.dart';
 
 class WeeklySnagData {
   final DateTime weekStart;
@@ -28,16 +33,50 @@ class WeeklySnagData {
 }
 
 class AppState extends ChangeNotifier {
+  final FirestoreService _service = FirestoreService();
+  StreamSubscription<List<SnagModel>>? _snagsSubscription;
+
   UserModel? _currentUser;
-  final List<SnagModel> _snags = [];
+  List<SnagModel> _snags = [];
+
+  // Tracks async operations on the snag list (upload + Firestore write)
+  bool _isSyncing = false;
+  String? _syncError;
+
+  bool get isSyncing => _isSyncing;
+  String? get syncError => _syncError;
+
+  AppState() {
+    _subscribeToSnags();
+  }
+
+  // ─── Firestore stream ──────────────────────────────────────────────────────
+
+  void _subscribeToSnags() {
+    _snagsSubscription = _service.snagsStream.listen(
+      (snagList) {
+        _snags = snagList;
+        notifyListeners();
+      },
+      onError: (e) {
+        _syncError = 'Failed to load snags: $e';
+        notifyListeners();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _snagsSubscription?.cancel();
+    super.dispose();
+  }
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
   UserModel? get currentUser => _currentUser;
   bool get isLoggedIn => _currentUser != null;
 
-  /// Simple credential check — replace with real API call in production.
+  /// Simple credential check — will be replaced with Firebase Auth later.
   Future<bool> login(String username, String password) async {
-    // Simulate network delay
     await Future.delayed(const Duration(milliseconds: 800));
 
     if (username.isNotEmpty && password.isNotEmpty) {
@@ -61,17 +100,28 @@ class AppState extends ChangeNotifier {
   // ─── Snags ─────────────────────────────────────────────────────────────────
   List<SnagModel> get snags => List.unmodifiable(_snags);
 
-  void addSnag(SnagModel snag) {
-    _snags.insert(0, snag);
+  /// Writes the snag to Firestore. If [imageFile] is provided it is uploaded
+  /// to Firebase Storage first. The stream listener updates [_snags] automatically
+  /// once Firestore confirms the write — no manual list manipulation needed.
+  Future<void> addSnag(SnagModel snag, {File? imageFile}) async {
+    _isSyncing = true;
+    _syncError = null;
     notifyListeners();
-  }
-
-  void updateSnagStatus(String snagId, SnagStatus newStatus) {
-    final idx = _snags.indexWhere((s) => s.id == snagId);
-    if (idx != -1) {
-      _snags[idx] = _snags[idx].copyWith(status: newStatus);
+    try {
+      await _service.addSnag(snag, imageFile: imageFile);
+    } catch (e) {
+      _syncError = e.toString();
+      rethrow; // Let the screen handle it with a SnackBar
+    } finally {
+      _isSyncing = false;
       notifyListeners();
     }
+  }
+
+  /// Updates only the status field in Firestore.
+  Future<void> updateSnagStatus(String snagId, SnagStatus newStatus) async {
+    await _service.updateSnagStatus(snagId, newStatus);
+    // Stream update is automatic — no local mutation needed
   }
 
   // ─── Computed Stats ────────────────────────────────────────────────────────

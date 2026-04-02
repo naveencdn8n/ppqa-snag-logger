@@ -64,8 +64,10 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
     setState(() => _isSubmitting = true);
 
     final state = context.read<AppState>();
+
+    // Build the snag — id is left empty; Firestore assigns the real auto-ID
     final snag = SnagModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: '',
       createdBy: state.currentUser?.id ?? 'unknown',
       createdAt: DateTime.now(),
       location: _location!,
@@ -76,36 +78,50 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
       defectDescription: _defectDescription!,
       severity: _severity!,
       status: SnagStatus.open,
-      evidenceImagePath: _evidenceImage?.path,
+      evidenceImagePath: null, // set by FirestoreService after upload
     );
 
-    state.addSnag(snag);
+    try {
+      await state.addSnag(
+        snag,
+        imageFile: _evidenceImage != null ? File(_evidenceImage!.path) : null,
+      );
 
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Snag logged and saved to cloud successfully!'),
+          backgroundColor: AppTheme.statusClosed,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+        ),
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Snag #${snag.id.substring(snag.id.length - 6)} logged successfully!'),
-        backgroundColor: AppTheme.statusClosed,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-
-    // Reset form
-    setState(() {
-      _location = null;
-      _floorNo = null;
-      _flatNo = null;
-      _element = null;
-      _trade = null;
-      _defectDescription = null;
-      _severity = null;
-      _evidenceImage = null;
-      _isSubmitting = false;
-    });
-    _formKey.currentState!.reset();
+      // Reset form
+      setState(() {
+        _location = null;
+        _floorNo = null;
+        _flatNo = null;
+        _element = null;
+        _trade = null;
+        _defectDescription = null;
+        _severity = null;
+        _evidenceImage = null;
+      });
+      _formKey.currentState!.reset();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save snag: $e'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override
