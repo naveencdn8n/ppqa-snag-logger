@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "758360550245",
+    "project_id": "ppqa-snag-logger",
+    "storage_bucket": "ppqa-snag-logger.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:758360550245:android:5a8d62b9d29cc0a9254f8c",
+        "android_client_info": {
+          "package_name": "com.ppqa.ppqa_snag_logger"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMJgFprqN9OYboyO8C_mNA92FAH7odmME"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
