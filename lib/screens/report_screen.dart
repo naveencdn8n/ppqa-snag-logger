@@ -2,18 +2,88 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_enums.dart';
+import '../services/sheets_export_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
 import 'weekly_progress_screen.dart';
 
-class ReportScreen extends StatelessWidget {
+class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});
+
+  @override
+  State<ReportScreen> createState() => _ReportScreenState();
+}
+
+class _ReportScreenState extends State<ReportScreen> {
+  bool _isExporting = false;
+  final _sheetsService = SheetsExportService();
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+
+  Future<void> _exportToSheets() async {
+    final snags = context.read<AppState>().snags;
+
+    setState(() => _isExporting = true);
+
+    try {
+      final count = await _sheetsService.exportSnags(snags);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Exported $count snags to Google Sheets'),
+          backgroundColor: AppTheme.statusClosed,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: $e'),
+          backgroundColor: AppTheme.severityRedLine,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const PPQAAppBar(title: 'Reports'),
+      appBar: PPQAAppBar(
+        title: 'Reports',
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _isExporting
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(
+                      Icons.upload_file_outlined,
+                      color: Colors.white,
+                    ),
+                    tooltip: 'Export to Google Sheets',
+                    onPressed: _exportToSheets,
+                  ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -64,6 +134,8 @@ class ReportScreen extends StatelessWidget {
       ),
     );
   }
+
+  // ── Bottom sheet helpers ───────────────────────────────────────────────────
 
   void _showSeveritySheet(BuildContext context) {
     final state = context.read<AppState>();
@@ -185,15 +257,15 @@ class ReportScreen extends StatelessWidget {
                         )
                       : ListView.builder(
                           controller: controller,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 20),
                           itemCount: entries.length,
                           itemBuilder: (_, i) {
                             final entry = entries[i];
-                            final pct = total == 0
-                                ? 0.0
-                                : entry.value / total;
-                            final barColor = colors[entry.key] ??
-                                AppTheme.secondary;
+                            final pct =
+                                total == 0 ? 0.0 : entry.value / total;
+                            final barColor =
+                                colors[entry.key] ?? AppTheme.secondary;
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 16),
@@ -247,6 +319,8 @@ class ReportScreen extends StatelessWidget {
     );
   }
 }
+
+// ── Private widgets (unchanged) ───────────────────────────────────────────────
 
 class _ReportSectionHeader extends StatelessWidget {
   const _ReportSectionHeader({required this.text});
