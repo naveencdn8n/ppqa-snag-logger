@@ -10,7 +10,9 @@ import '../models/config_models.dart';
 import '../models/snag_model.dart';
 import '../models/user_model.dart';
 import '../services/config_service.dart';
+import '../services/connectivity_service.dart';
 import '../services/firestore_service.dart';
+import '../services/offline_queue_service.dart';
 
 class WeeklySnagData {
   final DateTime weekStart;
@@ -39,8 +41,20 @@ class WeeklySnagData {
 class AppState extends ChangeNotifier {
   final FirestoreService _service = FirestoreService();
   final ConfigService _configService = ConfigService();
+  final ConnectivityService _connectivityService = ConnectivityService();
+  final OfflineQueueService _offlineQueueService = OfflineQueueService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+  // ── Connectivity + offline queue ───────────────────────────────────────────
+  StreamSubscription<bool>? _connectivitySubscription;
+  bool _isOnline = true;
+  int _pendingUploadCount = 0;
+  bool _isSyncingPending = false;
+
+  bool get isOnline => _isOnline;
+  int get pendingUploadCount => _pendingUploadCount;
+  bool get isSyncingPending => _isSyncingPending;
 
   // ── Auth ───────────────────────────────────────────────────────────────────
   UserModel? _currentUser;
@@ -86,6 +100,7 @@ class AppState extends ChangeNotifier {
   List<LocationItem> get locations => List.unmodifiable(_locations);
 
   AppState() {
+    _initConnectivity();
     // React to Firebase Auth state changes automatically
     _auth.authStateChanges().listen((user) {
       _authLoading = false;
@@ -126,6 +141,45 @@ class AppState extends ChangeNotifier {
 
     await _auth.signInWithCredential(credential);
     // authStateChanges() listener above handles the rest automatically
+  }
+
+  // ── Connectivity ──────────────────────────────────────────────────────────
+
+  Future<void> _initConnectivity() async {
+    _isOnline = await _connectivityService.isOnline;
+    _pendingUploadCount = await _offlineQueueService.pendingCount;
+    notifyListeners();
+
+    _connectivitySubscription =
+        _connectivityService.onStatusChanged.listen((online) async {
+      final wasOffline = !_isOnline;
+      _isOnline = online;
+      notifyListeners();
+
+      // Process queued uploads when coming back online
+      if (online && wasOffline && _pendingUploadCount > 0) {
+        await _processPendingUploads();
+      }
+    });
+  }
+
+  /// Uploads all queued offline media. Called automatically on reconnect.
+  Future<void> _processPendingUploads() async {
+    if (_isSyncingPending) return;
+    _isSyncingPending = true;
+    notifyListeners();
+
+    try {
+      // Small delay so Firestore can flush its own offline queue first
+      await Future.delayed(const Duration(seconds: 3));
+      await _offlineQueueService.processPendingUploads(_service);
+    } catch (_) {
+      // Non-fatal — will retry on next reconnect
+    } finally {
+      _isSyncingPending = false;
+      _pendingUploadCount = await _offlineQueueService.pendingCount;
+      notifyListeners();
+    }
   }
 
   // ── Sign out ───────────────────────────────────────────────────────────────
@@ -202,6 +256,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _cancelDataSubscriptions();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -215,7 +270,18 @@ class AppState extends ChangeNotifier {
     _syncError = null;
     notifyListeners();
     try {
-      await _service.addSnag(snag, mediaFiles: mediaFiles);
+      if (_isOnline) {
+        // Online: upload media + save to Firestore normally
+        await _service.addSnag(snag, mediaFiles: mediaFiles);
+      } else {
+        // Offline: save snag text to Firestore offline cache (auto-syncs later)
+        // and queue any media files for upload when connectivity returns
+        final snagId = await _service.addSnagOffline(snag);
+        if (mediaFiles.isNotEmpty) {
+          await _offlineQueueService.enqueue(snagId, mediaFiles);
+          _pendingUploadCount = await _offlineQueueService.pendingCount;
+        }
+      }
     } catch (e) {
       _syncError = e.toString();
       rethrow;

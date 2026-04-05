@@ -97,6 +97,20 @@ class FirestoreService {
     await docRef.set(finalSnag.toMap());
   }
 
+  // ─── Write: add snag offline (no media) ───────────────────────────────────
+
+  /// Saves a snag to Firestore without any media files.
+  /// Used when the device is offline — Firestore's offline cache queues the
+  /// write and syncs automatically once connectivity is restored.
+  ///
+  /// Returns the generated document ID so it can be used in the media queue.
+  Future<String> addSnagOffline(SnagModel snag) async {
+    final docRef = _snagsRef.doc();
+    final finalSnag = snag.copyWith(id: docRef.id, mediaUrls: const []);
+    await docRef.set(finalSnag.toMap());
+    return docRef.id;
+  }
+
   // ─── Write: update status ──────────────────────────────────────────────────
 
   /// Updates only the [status] field of an existing snag document.
@@ -105,7 +119,23 @@ class FirestoreService {
     await _snagsRef.doc(snagId).update({'status': newStatus.firestoreValue});
   }
 
+  // ─── Write: append media URLs (used after offline upload) ─────────────────
+
+  /// Appends [urls] to an existing snag's [mediaUrls] list using arrayUnion.
+  /// Uses set+merge so it is safe even if the doc hasn't fully synced yet.
+  Future<void> appendMediaUrls(String snagId, List<String> urls) async {
+    await _snagsRef.doc(snagId).set(
+      {'mediaUrls': FieldValue.arrayUnion(urls)},
+      SetOptions(merge: true),
+    );
+  }
+
   // ─── Storage: upload media ─────────────────────────────────────────────────
+
+  /// Public wrapper used by [OfflineQueueService] to re-upload queued files.
+  Future<String?> uploadMediaFile(File file, String snagId,
+          {required int index}) =>
+      _uploadMedia(file, snagId, index: index);
 
   /// Uploads a photo or video file to Firebase Storage.
   /// Path: `evidence/{snagId}_{index}.{ext}`

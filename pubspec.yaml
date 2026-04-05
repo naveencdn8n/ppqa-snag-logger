@@ -23,6 +23,9 @@ dependencies:
   google_sign_in: ^6.2.2
   # Google Sheets export
   gsheets: ^0.5.0
+  # Offline support
+  connectivity_plus: ^6.0.0
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:

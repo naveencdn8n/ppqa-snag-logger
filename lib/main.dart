@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,14 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Enable Firestore offline persistence so snag text data is cached locally
+  // and queued writes sync automatically when connectivity is restored.
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(),
@@ -49,6 +58,80 @@ class PPQAApp extends StatelessWidget {
           // Not signed in → go to login
           return const LoginScreen();
         },
+      ),
+    );
+  }
+}
+
+// ── Offline / syncing banners ─────────────────────────────────────────────────
+
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner({required this.pendingCount});
+  final int pendingCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final msg = pendingCount > 0
+        ? 'Offline — $pendingCount snag${pendingCount == 1 ? '' : 's'} queued for upload'
+        : 'Offline — snags will sync when connected';
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        width: double.infinity,
+        color: const Color(0xFFBF360C),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+        child: Row(
+          children: [
+            const Icon(Icons.wifi_off_rounded, color: Colors.white, size: 15),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                msg,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SyncingBanner extends StatelessWidget {
+  const _SyncingBanner({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        width: double.infinity,
+        color: const Color(0xFF1B5E20),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 13,
+              height: 13,
+              child: CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Uploading $count queued snag${count == 1 ? '' : 's'}...',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -123,10 +206,25 @@ class AppShellScreenState extends State<AppShellScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      body: Column(
+        children: [
+          // ── Network status banners ─────────────────────────────────────
+          if (!appState.isOnline)
+            _OfflineBanner(pendingCount: appState.pendingUploadCount)
+          else if (appState.isSyncingPending)
+            _SyncingBanner(count: appState.pendingUploadCount),
+
+          // ── Main screen content ────────────────────────────────────────
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: _screens,
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
