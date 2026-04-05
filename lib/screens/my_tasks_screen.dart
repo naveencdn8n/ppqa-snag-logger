@@ -16,21 +16,41 @@ class MyTasksScreen extends StatefulWidget {
   State<MyTasksScreen> createState() => _MyTasksScreenState();
 }
 
-class _MyTasksScreenState extends State<MyTasksScreen> {
+class _MyTasksScreenState extends State<MyTasksScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  // ── Shared filters ──────────────────────────────────────────────────────────
   String? _selectedLocation;
   String? _selectedFloor;
   SnagStatus? _selectedStatus; // null = All
 
-  List<String> _floorsFor(AppState appState) {
-    if (_selectedLocation == null) return [];
-    final loc = appState.locations
-        .where((l) => l.name == _selectedLocation)
-        .firstOrNull;
-    return loc?.floors ?? [];
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() => setState(() {})); // rebuild on tab switch
   }
 
-  List<SnagModel> _applyFilters(List<SnagModel> mine) {
-    return mine.where((s) {
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  List<String> _floorsFor(AppState appState) {
+    if (_selectedLocation == null) return [];
+    return appState.locations
+            .where((l) => l.name == _selectedLocation)
+            .firstOrNull
+            ?.floors ??
+        [];
+  }
+
+  List<SnagModel> _applyFilters(List<SnagModel> source) {
+    return source.where((s) {
       if (_selectedLocation != null && s.location != _selectedLocation) {
         return false;
       }
@@ -63,21 +83,61 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     );
   }
 
+  // ── Build ───────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final myName = appState.currentUser?.username ?? '';
-    final mySnags = appState.getMySnags(myName);
-    final filtered = _applyFilters(mySnags);
-
     final locationNames = appState.locations.map((l) => l.name).toList();
     final floors = _floorsFor(appState);
 
+    final mySnags = _applyFilters(appState.getMySnags(myName));
+    final teamSnags = _applyFilters(appState.getTeamSnags(myName));
+    final myTotal = appState.getMySnags(myName).length;
+    final teamTotal = appState.getTeamSnags(myName).length;
+
     return Scaffold(
-      appBar: const PPQAAppBar(title: 'My Tasks', showBack: true),
+      appBar: PPQAAppBar(
+        title: 'Tasks',
+        showBack: true,
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          indicatorColor: Colors.white,
+          indicatorWeight: 3,
+          tabs: [
+            Tab(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.person_outline, size: 18),
+                  const SizedBox(width: 6),
+                  const Text('My Snags'),
+                  const SizedBox(width: 6),
+                  _TabBadge(count: myTotal),
+                ],
+              ),
+            ),
+            Tab(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.group_outlined, size: 18),
+                  const SizedBox(width: 6),
+                  const Text('Team'),
+                  const SizedBox(width: 6),
+                  _TabBadge(count: teamTotal),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
       body: Column(
         children: [
-          // ── Filter bar ──────────────────────────────────────────────────
+          // ── Shared filter bar ─────────────────────────────────────────────
           Container(
             color: const Color(0xFFECEFF4),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -110,13 +170,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                             : 'All floors',
                         onChanged: floors.isEmpty
                             ? null
-                            : (val) => setState(() => _selectedFloor = val),
+                            : (val) =>
+                                setState(() => _selectedFloor = val),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                // Status chips
                 SizedBox(
                   width: double.infinity,
                   child: SingleChildScrollView(
@@ -149,14 +209,16 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ),
           ),
 
-          // ── Count bar ───────────────────────────────────────────────────
+          // ── Count + clear bar ─────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '${filtered.length} of ${mySnags.length} task${mySnags.length == 1 ? '' : 's'}',
+                  _tabController.index == 0
+                      ? '${mySnags.length} of $myTotal snag${myTotal == 1 ? '' : 's'}'
+                      : '${teamSnags.length} of $teamTotal snag${teamTotal == 1 ? '' : 's'}',
                   style: const TextStyle(
                     fontSize: 13,
                     color: Color(0xFF6C757D),
@@ -166,7 +228,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 if (_hasFilter)
                   TextButton.icon(
                     icon: const Icon(Icons.clear, size: 16),
-                    label: const Text('Clear'),
+                    label: const Text('Clear filters'),
                     onPressed: _clearFilters,
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.secondary,
@@ -179,37 +241,210 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ),
           ),
 
-          // ── Task list ───────────────────────────────────────────────────
+          // ── Tab views ─────────────────────────────────────────────────────
           Expanded(
-            child: mySnags.isEmpty
-                ? const _EmptyState()
-                : filtered.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No tasks match the selected filters.',
-                          style: TextStyle(
-                            color: Color(0xFF6C757D),
-                            fontSize: 14,
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                        itemCount: filtered.length,
-                        itemBuilder: (_, i) {
-                          final snag = filtered[i];
-                          return _TaskCard(
-                            snag: snag,
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => SnagDetailScreen(snag: snag),
-                              ),
-                            ),
-                            onChangeStatus: () =>
-                                _showStatusSheet(context, snag),
-                          );
-                        },
-                      ),
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // ── Tab 1: My Snags ──────────────────────────────────────
+                _MySnagsList(
+                  snags: mySnags,
+                  total: myTotal,
+                  onTap: (snag) => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => SnagDetailScreen(snag: snag)),
+                  ),
+                  onChangeStatus: (snag) => _showStatusSheet(context, snag),
+                ),
+
+                // ── Tab 2: Team Snags ────────────────────────────────────
+                _TeamSnagsList(
+                  snags: teamSnags,
+                  total: teamTotal,
+                  onTap: (snag) => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => SnagDetailScreen(snag: snag)),
+                  ),
+                  onChangeStatus: (snag) => _showStatusSheet(context, snag),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── My Snags list ─────────────────────────────────────────────────────────────
+
+class _MySnagsList extends StatelessWidget {
+  const _MySnagsList({
+    required this.snags,
+    required this.total,
+    required this.onTap,
+    required this.onChangeStatus,
+  });
+
+  final List<SnagModel> snags;
+  final int total;
+  final void Function(SnagModel) onTap;
+  final void Function(SnagModel) onChangeStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    if (total == 0) {
+      return const _EmptyState(
+        icon: Icons.task_alt,
+        message: 'You have no snags logged yet.',
+        sub: 'Snags you log will appear here.',
+      );
+    }
+    if (snags.isEmpty) {
+      return const _NoMatchState();
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      itemCount: snags.length,
+      itemBuilder: (_, i) {
+        final snag = snags[i];
+        return _TaskCard(
+          snag: snag,
+          showInspector: false,
+          onTap: () => onTap(snag),
+          onChangeStatus: () => onChangeStatus(snag),
+        );
+      },
+    );
+  }
+}
+
+// ── Team Snags list (grouped by inspector) ────────────────────────────────────
+
+class _TeamSnagsList extends StatelessWidget {
+  const _TeamSnagsList({
+    required this.snags,
+    required this.total,
+    required this.onTap,
+    required this.onChangeStatus,
+  });
+
+  final List<SnagModel> snags;
+  final int total;
+  final void Function(SnagModel) onTap;
+  final void Function(SnagModel) onChangeStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    if (total == 0) {
+      return const _EmptyState(
+        icon: Icons.group_outlined,
+        message: 'No team snags found.',
+        sub: 'Snags logged by your team will appear here.',
+      );
+    }
+    if (snags.isEmpty) {
+      return const _NoMatchState();
+    }
+
+    // Group snags by inspector (createdBy), sorted alphabetically by name
+    final Map<String, List<SnagModel>> grouped = {};
+    for (final snag in snags) {
+      grouped.putIfAbsent(snag.createdBy, () => []).add(snag);
+    }
+    final sortedNames = grouped.keys.toList()..sort();
+
+    // Build flat list: [header, card, card, ..., header, card, ...]
+    final items = <_ListItem>[];
+    for (final name in sortedNames) {
+      final group = grouped[name]!;
+      items.add(_HeaderItem(name: name, count: group.length));
+      for (final snag in group) {
+        items.add(_SnagItem(snag: snag));
+      }
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      itemCount: items.length,
+      itemBuilder: (_, i) {
+        final item = items[i];
+        if (item is _HeaderItem) {
+          return _InspectorHeader(name: item.name, count: item.count);
+        }
+        final snag = (item as _SnagItem).snag;
+        return _TaskCard(
+          snag: snag,
+          showInspector: false, // name already shown in group header
+          onTap: () => onTap(snag),
+          onChangeStatus: () => onChangeStatus(snag),
+        );
+      },
+    );
+  }
+}
+
+// ── List item types (sealed pattern) ─────────────────────────────────────────
+
+abstract class _ListItem {}
+
+class _HeaderItem extends _ListItem {
+  final String name;
+  final int count;
+  _HeaderItem({required this.name, required this.count});
+}
+
+class _SnagItem extends _ListItem {
+  final SnagModel snag;
+  _SnagItem({required this.snag});
+}
+
+// ── Inspector group header ────────────────────────────────────────────────────
+
+class _InspectorHeader extends StatelessWidget {
+  const _InspectorHeader({required this.name, required this.count});
+  final String name;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 6),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.person, size: 16, color: AppTheme.primary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.primary,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '$count snag${count == 1 ? '' : 's'}',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.primary,
+              ),
+            ),
           ),
         ],
       ),
@@ -222,11 +457,13 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 class _TaskCard extends StatelessWidget {
   const _TaskCard({
     required this.snag,
+    required this.showInspector,
     required this.onTap,
     required this.onChangeStatus,
   });
 
   final SnagModel snag;
+  final bool showInspector;
   final VoidCallback onTap;
   final VoidCallback onChangeStatus;
 
@@ -263,15 +500,21 @@ class _TaskCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              // Location row
+              // Location
               Text(
-                '${snag.location}  ·  Floor ${snag.floorNo}  ·  ${snag.flatNo}',
+                [
+                  snag.location,
+                  'Floor ${snag.floorNo}',
+                  snag.flatNo,
+                  if (snag.room.isNotEmpty) snag.room,
+                ].join('  ·  '),
                 style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF6C757D),
                 ),
               ),
               const SizedBox(height: 4),
+              // Trade / Element
               Text(
                 '${snag.trade}  ·  ${snag.element}',
                 style: const TextStyle(
@@ -279,6 +522,24 @@ class _TaskCard extends StatelessWidget {
                   color: Color(0xFF6C757D),
                 ),
               ),
+              if (showInspector) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline,
+                        size: 13, color: Color(0xFF9E9E9E)),
+                    const SizedBox(width: 4),
+                    Text(
+                      snag.createdBy,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF9E9E9E),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 10),
               // Action row
               Row(
@@ -362,7 +623,6 @@ class _StatusSheetState extends State<_StatusSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Header
             Row(
               children: [
                 const Icon(Icons.swap_horiz, color: AppTheme.primary),
@@ -382,15 +642,11 @@ class _StatusSheetState extends State<_StatusSheet> {
               widget.snag.defectDescription,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF6C757D),
-              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6C757D)),
             ),
             const SizedBox(height: 16),
             const Divider(height: 1),
             const SizedBox(height: 8),
-
             if (_saving)
               const Padding(
                 padding: EdgeInsets.all(16),
@@ -445,6 +701,32 @@ class _StatusOption extends StatelessWidget {
           ? Icon(Icons.check_circle, color: status.color, size: 20)
           : null,
       onTap: onTap,
+    );
+  }
+}
+
+// ── Tab badge ─────────────────────────────────────────────────────────────────
+
+class _TabBadge extends StatelessWidget {
+  const _TabBadge({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 }
@@ -517,30 +799,52 @@ class _StatusBadge extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({
+    required this.icon,
+    required this.message,
+    required this.sub,
+  });
+
+  final IconData icon;
+  final String message;
+  final String sub;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.task_alt, size: 72, color: Color(0xFFCED4DA)),
-          SizedBox(height: 16),
+          Icon(icon, size: 72, color: const Color(0xFFCED4DA)),
+          const SizedBox(height: 16),
           Text(
-            'You have no snags logged yet.',
-            style: TextStyle(
+            message,
+            style: const TextStyle(
               fontSize: 15,
               color: Color(0xFF6C757D),
               fontWeight: FontWeight.w500,
             ),
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
-            'Snags you log will appear here.',
-            style: TextStyle(fontSize: 13, color: Color(0xFF6C757D)),
+            sub,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF6C757D)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NoMatchState extends StatelessWidget {
+  const _NoMatchState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Text(
+        'No snags match the selected filters.',
+        style: TextStyle(color: Color(0xFF6C757D), fontSize: 14),
       ),
     );
   }

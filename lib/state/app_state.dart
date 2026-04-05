@@ -240,8 +240,13 @@ class AppState extends ChangeNotifier {
   List<SnagModel> getSnagsByUnit(String unit) =>
       _snags.where((s) => s.flatNo == unit).toList();
 
-  List<SnagModel> getMySnags(String userId) =>
-      _snags.where((s) => s.createdBy == userId).toList();
+  List<SnagModel> getMySnags(String myName) =>
+      _snags.where((s) => s.createdBy == myName).toList();
+
+  /// All snags logged by other team members (excludes current user and blanks).
+  List<SnagModel> getTeamSnags(String myName) => _snags
+      .where((s) => s.createdBy != myName && s.createdBy.isNotEmpty)
+      .toList();
 
   // ── Weekly Grouping ────────────────────────────────────────────────────────
 
