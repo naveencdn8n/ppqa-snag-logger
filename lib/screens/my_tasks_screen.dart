@@ -97,6 +97,10 @@ class _MyTasksScreenState extends State<MyTasksScreen>
     final myTotal = appState.getMySnags(myName).length;
     final teamTotal = appState.getTeamSnags(myName).length;
 
+    // Role-based permission flags
+    final canChangeOwn = appState.canChangeOwnStatus;   // inspector + supervisor
+    final canChangeAny = appState.canChangeAnyStatus;   // supervisor only
+
     return Scaffold(
       appBar: PPQAAppBar(
         title: 'Tasks',
@@ -250,6 +254,7 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                 _MySnagsList(
                   snags: mySnags,
                   total: myTotal,
+                  canChangeStatus: canChangeOwn,
                   onTap: (snag) => Navigator.of(context).push(
                     MaterialPageRoute(
                         builder: (_) => SnagDetailScreen(snag: snag)),
@@ -262,6 +267,7 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                   snags: teamSnags,
                   total: teamTotal,
                   resolveInspector: appState.resolveInspector,
+                  canChangeStatus: canChangeAny,
                   onTap: (snag) => Navigator.of(context).push(
                     MaterialPageRoute(
                         builder: (_) => SnagDetailScreen(snag: snag)),
@@ -283,12 +289,14 @@ class _MySnagsList extends StatelessWidget {
   const _MySnagsList({
     required this.snags,
     required this.total,
+    required this.canChangeStatus,
     required this.onTap,
     required this.onChangeStatus,
   });
 
   final List<SnagModel> snags;
   final int total;
+  final bool canChangeStatus;
   final void Function(SnagModel) onTap;
   final void Function(SnagModel) onChangeStatus;
 
@@ -312,6 +320,7 @@ class _MySnagsList extends StatelessWidget {
         return _TaskCard(
           snag: snag,
           showInspector: false,
+          canChangeStatus: canChangeStatus,
           onTap: () => onTap(snag),
           onChangeStatus: () => onChangeStatus(snag),
         );
@@ -327,6 +336,7 @@ class _TeamSnagsList extends StatelessWidget {
     required this.snags,
     required this.total,
     required this.resolveInspector,
+    required this.canChangeStatus,
     required this.onTap,
     required this.onChangeStatus,
   });
@@ -334,6 +344,7 @@ class _TeamSnagsList extends StatelessWidget {
   final List<SnagModel> snags;
   final int total;
   final String Function(String) resolveInspector;
+  final bool canChangeStatus;
   final void Function(SnagModel) onTap;
   final void Function(SnagModel) onChangeStatus;
 
@@ -380,6 +391,7 @@ class _TeamSnagsList extends StatelessWidget {
         return _TaskCard(
           snag: snag,
           showInspector: false, // name already shown in group header
+          canChangeStatus: canChangeStatus,
           onTap: () => onTap(snag),
           onChangeStatus: () => onChangeStatus(snag),
         );
@@ -462,12 +474,14 @@ class _TaskCard extends StatelessWidget {
   const _TaskCard({
     required this.snag,
     required this.showInspector,
+    required this.canChangeStatus,
     required this.onTap,
     required this.onChangeStatus,
   });
 
   final SnagModel snag;
   final bool showInspector;
+  final bool canChangeStatus;
   final VoidCallback onTap;
   final VoidCallback onChangeStatus;
 
@@ -542,27 +556,29 @@ class _TaskCard extends StatelessWidget {
                   ],
                 ),
               ],
-              const SizedBox(height: 10),
-              // Action row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.swap_horiz, size: 16),
-                    label: const Text('Change Status'),
-                    onPressed: onChangeStatus,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primary,
-                      side: BorderSide(
-                          color: AppTheme.primary.withValues(alpha: 0.4)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      textStyle: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
+              if (canChangeStatus) ...[
+                const SizedBox(height: 10),
+                // Action row — only shown when user has permission
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.swap_horiz, size: 16),
+                      label: const Text('Change Status'),
+                      onPressed: onChangeStatus,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primary,
+                        side: BorderSide(
+                            color: AppTheme.primary.withValues(alpha: 0.4)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

@@ -23,6 +23,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
   final _formKey = GlobalKey<FormState>();
   final _customDefectController = TextEditingController();
   final _notesController = TextEditingController();
+  final _roomController = TextEditingController();
 
   // ── Form state ────────────────────────────────────────────────────────────
   String? _location;
@@ -45,6 +46,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
   void dispose() {
     _customDefectController.dispose();
     _notesController.dispose();
+    _roomController.dispose();
     super.dispose();
   }
 
@@ -232,6 +234,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
     });
     _customDefectController.clear();
     _notesController.clear();
+    _roomController.clear();
     _formKey.currentState!.reset();
   }
 
@@ -280,6 +283,46 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+
+    // Viewers (and blocked users) cannot log snags
+    if (!appState.canLogSnags) {
+      return Scaffold(
+        appBar: const PPQAAppBar(title: 'Log a Snag'),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lock_outline_rounded,
+                    size: 72, color: Colors.grey.shade300),
+                const SizedBox(height: 20),
+                const Text(
+                  'View-Only Access',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF495057),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Your current role does not allow logging snags.\n'
+                  'Contact your supervisor to request access.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final trades = appState.trades;
     final locations = appState.locations;
 
@@ -318,6 +361,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
                         _floor = null;
                         _unit = null;
                         _room = null;
+                        _roomController.clear();
                       }),
                       validator: (val) =>
                           val == null ? 'Please select a location' : null,
@@ -363,20 +407,34 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Room (level 4) — optional if not configured
-                    if (availableRooms.isNotEmpty)
-                      PPQADropdown<String>(
-                        label: 'Room',
-                        isRequired: true,
-                        value: _room,
-                        items: availableRooms,
-                        labelBuilder: (s) => s,
-                        onChanged: (val) => setState(() => _room = val),
-                        validator: (val) =>
-                            val == null ? 'Please select a room' : null,
-                        hint: 'Select room',
-                      ),
-                    const SizedBox(height: 20),
+                    // Room (level 4) — always shown once a location is picked.
+                    // Dropdown when rooms are configured in admin; free-text otherwise.
+                    if (_location != null) ...[
+                      if (availableRooms.isNotEmpty)
+                        PPQADropdown<String>(
+                          label: 'Room',
+                          isRequired: false,
+                          value: _room,
+                          items: availableRooms,
+                          labelBuilder: (s) => s,
+                          onChanged: (val) => setState(() => _room = val),
+                          hint: 'Select room (optional)',
+                        )
+                      else
+                        TextFormField(
+                          controller: _roomController,
+                          textCapitalization: TextCapitalization.words,
+                          onChanged: (val) =>
+                              setState(() => _room = val.trim().isEmpty ? null : val.trim()),
+                          decoration: const InputDecoration(
+                            labelText: 'Room',
+                            hintText: 'e.g. Kitchen, Bedroom 1, Living Room…',
+                            prefixIcon: Icon(Icons.door_front_door_outlined),
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                    ],
+                    const SizedBox(height: 8),
 
                     // ── Section 2: Defect Details ───────────────────────────
                     const _SectionHeader(

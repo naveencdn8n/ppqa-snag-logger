@@ -59,10 +59,19 @@ class AppState extends ChangeNotifier {
   // ── Auth ───────────────────────────────────────────────────────────────────
   UserModel? _currentUser;
   bool _authLoading = true;
+  bool _roleLoading = false;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoggedIn => _currentUser != null;
   bool get authLoading => _authLoading;
+  bool get roleLoading => _roleLoading;
+
+  // ── Role / permission convenience getters ─────────────────────────────────
+  bool get isBlocked => _currentUser?.isBlocked ?? false;
+  bool get canLogSnags => _currentUser?.canLogSnags ?? false;
+  bool get canChangeAnyStatus => _currentUser?.canChangeAnyStatus ?? false;
+  bool get canChangeOwnStatus => _currentUser?.canChangeOwnStatus ?? false;
+  bool get isViewOnly => _currentUser?.isViewOnly ?? true;
 
   // ── Snags ──────────────────────────────────────────────────────────────────
   StreamSubscription<List<SnagModel>>? _snagsSubscription;
@@ -102,27 +111,45 @@ class AppState extends ChangeNotifier {
   AppState() {
     _initConnectivity();
     // React to Firebase Auth state changes automatically
-    _auth.authStateChanges().listen((user) {
-      _authLoading = false;
-      if (user != null) {
-        _currentUser = UserModel.fromFirebaseUser(user);
-        // Upsert display name into Firestore users collection (fire-and-forget)
-        _service.saveUserProfile(
-          user.uid,
-          user.displayName ?? user.email?.split('@').first ?? 'User',
-          user.email ?? '',
-        );
-        _subscribeToSnags();
-        _subscribeToConfig();
-        _subscribeToUsers();
-      } else {
+    _auth.authStateChanges().listen((user) async {
+      if (user == null) {
+        _authLoading = false;
+        _roleLoading = false;
         _currentUser = null;
         _cancelDataSubscriptions();
         _snags = [];
         _trades = [];
         _locations = [];
         _userProfiles = {};
+        notifyListeners();
+        return;
       }
+
+      // User is signed in — fetch their role/status from Firestore
+      _authLoading = false;
+      _roleLoading = true;
+      notifyListeners();
+
+      final profileData = await _service.getUserProfileData(user.uid);
+      _currentUser = UserModel.fromFirebaseUser(user, profileData: profileData);
+      _roleLoading = false;
+
+      if (_currentUser!.isBlocked) {
+        // Blocked: keep user object (so UI shows blocked screen) but don't
+        // subscribe to any data streams — they should see nothing.
+        notifyListeners();
+        return;
+      }
+
+      // Active user: upsert display name + subscribe to data streams
+      _service.saveUserProfile(
+        user.uid,
+        user.displayName ?? user.email?.split('@').first ?? 'User',
+        user.email ?? '',
+      );
+      _subscribeToSnags();
+      _subscribeToConfig();
+      _subscribeToUsers();
       notifyListeners();
     });
   }

@@ -32,6 +32,17 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
+  /// Fetches a user's Firestore profile (role, status, displayName).
+  /// Returns an empty map if the document doesn't exist yet (new user).
+  Future<Map<String, dynamic>> getUserProfileData(String uid) async {
+    try {
+      final snap = await _usersRef.doc(uid).get();
+      return snap.exists ? (snap.data() ?? {}) : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
   /// Real-time stream of uid → displayName for all team members.
   Stream<Map<String, String>> get usersStream {
     return _usersRef.snapshots().map((snap) {

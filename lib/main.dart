@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -43,20 +42,18 @@ class PPQAApp extends StatelessWidget {
       title: 'PPQA Snag Logger',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
-      // Stream-based routing — no manual Navigator.push needed for auth
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          // Still checking auth state — show splash
-          if (snapshot.connectionState == ConnectionState.waiting) {
+      home: Consumer<AppState>(
+        builder: (context, appState, _) {
+          // Auth or role still being resolved — show splash
+          if (appState.authLoading || appState.roleLoading) {
             return const _SplashScreen();
           }
-          // Signed in → go to app
-          if (snapshot.hasData) {
-            return const AppShellScreen();
-          }
-          // Not signed in → go to login
-          return const LoginScreen();
+          // Not signed in → login screen
+          if (!appState.isLoggedIn) return const LoginScreen();
+          // Signed in but blocked → blocked screen
+          if (appState.isBlocked) return const _BlockedScreen();
+          // Active user → main app
+          return const AppShellScreen();
         },
       ),
     );
@@ -137,6 +134,77 @@ class _SyncingBanner extends StatelessWidget {
   }
 }
 
+// ── Blocked screen (shown when user.status == 'blocked') ─────────────────────
+class _BlockedScreen extends StatelessWidget {
+  const _BlockedScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF3F3),
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.red.shade200, width: 2),
+                  ),
+                  child: Icon(
+                    Icons.block_rounded,
+                    size: 64,
+                    color: Colors.red.shade400,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                const Text(
+                  'Account Blocked',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212529),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Your account has been blocked by an administrator.\n'
+                  'Please contact your project supervisor for assistance.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 36),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Sign Out'),
+                  onPressed: () => context.read<AppState>().signOut(),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade600,
+                    side: BorderSide(color: Colors.red.shade300),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 28, vertical: 14),
+                    textStyle: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Splash screen (shown briefly while Firebase checks auth state) ─────────────
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
@@ -195,10 +263,18 @@ class AppShellScreen extends StatefulWidget {
 class AppShellScreenState extends State<AppShellScreen> {
   int _currentIndex = 0;
 
-  static const List<Widget> _screens = [
+  // Full screen list (inspector / supervisor)
+  static const List<Widget> _fullScreens = [
     MainDashboardScreen(),
     OpenSnagsScreen(),
     LogSnagScreen(),
+    ReportScreen(),
+  ];
+
+  // Reduced screen list for viewers (no Log Snag tab)
+  static const List<Widget> _viewerScreens = [
+    MainDashboardScreen(),
+    OpenSnagsScreen(),
     ReportScreen(),
   ];
 
@@ -207,6 +283,12 @@ class AppShellScreenState extends State<AppShellScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final isViewer = appState.isViewOnly;
+
+    final screens = isViewer ? _viewerScreens : _fullScreens;
+
+    // Clamp index in case role changes while app is open
+    final safeIndex = _currentIndex.clamp(0, screens.length - 1);
 
     return Scaffold(
       body: Column(
@@ -220,32 +302,33 @@ class AppShellScreenState extends State<AppShellScreen> {
           // ── Main screen content ────────────────────────────────────────
           Expanded(
             child: IndexedStack(
-              index: _currentIndex,
-              children: _screens,
+              index: safeIndex,
+              children: screens,
             ),
           ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
+        selectedIndex: safeIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label: 'Home',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.list_alt_outlined),
             selectedIcon: Icon(Icons.list_alt),
             label: 'Open Snags',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.add_circle_outline),
-            selectedIcon: Icon(Icons.add_circle),
-            label: 'Log Snag',
-          ),
-          NavigationDestination(
+          if (!isViewer)
+            const NavigationDestination(
+              icon: Icon(Icons.add_circle_outline),
+              selectedIcon: Icon(Icons.add_circle),
+              label: 'Log Snag',
+            ),
+          const NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
             selectedIcon: Icon(Icons.bar_chart),
             label: 'Report',
