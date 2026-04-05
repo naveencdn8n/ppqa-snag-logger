@@ -495,8 +495,6 @@ class _TaskCard extends StatelessWidget {
                         fontSize: 14,
                         color: Color(0xFF212529),
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 8),

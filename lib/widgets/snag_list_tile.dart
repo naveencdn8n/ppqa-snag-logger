@@ -21,8 +21,6 @@ class SnagListTile extends StatelessWidget {
             fontWeight: FontWeight.w600,
             fontSize: 14,
           ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
