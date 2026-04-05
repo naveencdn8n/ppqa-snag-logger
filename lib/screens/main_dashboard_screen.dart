@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
 import '../main.dart';
 import 'migration_screen.dart';
+import 'project_selector_screen.dart';
 import 'resources_screen.dart';
 import 'status_report_screen.dart';
 import 'report_screen.dart';
@@ -33,6 +34,8 @@ class MainDashboardScreen extends StatelessWidget {
     final appState = context.watch<AppState>();
     final user = appState.currentUser;
     final isAdmin = appState.isAdmin;
+    final activeProject = appState.activeProject;
+    final canSwitchProject = appState.availableProjects.length > 1;
 
     return Scaffold(
       appBar: PPQAAppBar(
@@ -98,6 +101,57 @@ class MainDashboardScreen extends StatelessWidget {
                                 fontSize: 12,
                               ),
                             ),
+                            if (activeProject != null) ...[
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: canSwitchProject
+                                    ? () => _push(context,
+                                        const ProjectSelectorScreen(
+                                            showBack: true))
+                                    : null,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: Color(activeProject.color),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          activeProject.shortName,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (canSwitchProject) ...[
+                                        const SizedBox(width: 4),
+                                        const Icon(
+                                          Icons.swap_horiz_rounded,
+                                          color: Colors.white70,
+                                          size: 14,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
