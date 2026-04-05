@@ -21,6 +21,10 @@ class UserModel {
   final String status;
   final String? photoUrl;
 
+  /// True when users/{uid}.isAdmin == true in Firestore.
+  /// Grants access to the web admin portal and the in-app migration screen.
+  final bool isAdmin;
+
   const UserModel({
     required this.id,
     required this.username,
@@ -28,10 +32,12 @@ class UserModel {
     required this.role,
     required this.status,
     this.photoUrl,
+    this.isAdmin = false,
   });
 
   /// Creates a [UserModel] from a Firebase [User] and Firestore profile data.
-  /// [profileData] should contain 'role' and 'status' from the `users` collection.
+  /// [profileData] should contain 'role', 'status', and 'isAdmin' from the
+  /// `users` collection.
   factory UserModel.fromFirebaseUser(
     User user, {
     Map<String, dynamic>? profileData,
@@ -43,6 +49,7 @@ class UserModel {
       role: (profileData?['role'] as String?) ?? UserRoles.inspector,
       status: (profileData?['status'] as String?) ?? UserStatuses.active,
       photoUrl: user.photoURL,
+      isAdmin: (profileData?['isAdmin'] as bool?) ?? false,
     );
   }
 

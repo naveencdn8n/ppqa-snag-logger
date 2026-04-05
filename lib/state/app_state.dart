@@ -73,6 +73,9 @@ class AppState extends ChangeNotifier {
   bool get canChangeOwnStatus => _currentUser?.canChangeOwnStatus ?? false;
   bool get isViewOnly => _currentUser?.isViewOnly ?? true;
 
+  /// True when the user is a global admin (web portal + migration screen access).
+  bool get isAdmin => _currentUser?.isAdmin ?? false;
+
   // ── Snags ──────────────────────────────────────────────────────────────────
   StreamSubscription<List<SnagModel>>? _snagsSubscription;
   List<SnagModel> _snags = [];
