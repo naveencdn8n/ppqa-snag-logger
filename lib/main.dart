@@ -52,7 +52,11 @@ class PPQAApp extends StatelessWidget {
           if (!appState.isLoggedIn) return const LoginScreen();
           // Signed in but blocked → blocked screen
           if (appState.isBlocked) return const _BlockedScreen();
-          // Active user → main app
+          // Waiting for project list from Firestore
+          if (appState.projectsLoading) return const _SplashScreen();
+          // User has no projects yet (migration not run / not added to any project)
+          if (!appState.hasActiveProject) return const _NoProjectScreen();
+          // Active project selected → main app
           return const AppShellScreen();
         },
       ),
@@ -244,6 +248,75 @@ class _SplashScreen extends StatelessWidget {
               strokeWidth: 2.5,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── No-project screen (shown when user has no accessible project yet) ─────────
+class _NoProjectScreen extends StatelessWidget {
+  const _NoProjectScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.folder_off_outlined,
+                    size: 64,
+                    color: AppTheme.primary.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 28),
+                const Text(
+                  'No Project Assigned',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212529),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'You have not been added to any project yet.\n'
+                  'Please ask your administrator to run the data migration '
+                  'or add you to a project.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 36),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Sign Out'),
+                  onPressed: () => context.read<AppState>().signOut(),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 28, vertical: 14),
+                    textStyle: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

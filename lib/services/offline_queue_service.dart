@@ -9,22 +9,30 @@ import 'firestore_service.dart';
 class PendingMediaUpload {
   final String snagId;
 
+  /// The project this snag belongs to — needed to write to the correct
+  /// `projects/{projectId}/snags/{snagId}` path when reconnecting.
+  final String projectId;
+
   /// Absolute paths to media files copied into persistent app storage.
   final List<String> mediaFilePaths;
 
   const PendingMediaUpload({
     required this.snagId,
+    required this.projectId,
     required this.mediaFilePaths,
   });
 
   Map<String, dynamic> toJson() => {
         'snagId': snagId,
+        'projectId': projectId,
         'mediaFilePaths': mediaFilePaths,
       };
 
   factory PendingMediaUpload.fromJson(Map<String, dynamic> json) =>
       PendingMediaUpload(
         snagId: json['snagId'] as String,
+        // projectId may be absent in queue entries written before v2 — skip on process
+        projectId: json['projectId'] as String? ?? '',
         mediaFilePaths: List<String>.from(json['mediaFilePaths'] as List),
       );
 }
@@ -72,7 +80,11 @@ class OfflineQueueService {
 
   /// Copies [mediaFiles] to persistent app storage and adds them to the queue
   /// so they can be uploaded when connectivity is restored.
-  Future<void> enqueue(String snagId, List<File> mediaFiles) async {
+  Future<void> enqueue(
+    String snagId,
+    String projectId,
+    List<File> mediaFiles,
+  ) async {
     if (mediaFiles.isEmpty) return;
 
     // Copy files to a persistent directory (image_picker temp cache gets cleared)
@@ -91,6 +103,7 @@ class OfflineQueueService {
     final queue = await readQueue();
     queue.add(PendingMediaUpload(
       snagId: snagId,
+      projectId: projectId,
       mediaFilePaths: persistentPaths,
     ));
     await _writeQueue(queue);
@@ -100,6 +113,8 @@ class OfflineQueueService {
   ///
   /// Successfully uploaded items are removed from the queue and their local
   /// copies are deleted. Items that fail remain for the next retry.
+  /// Items without a [projectId] (written by pre-v2 app) are discarded — they
+  /// cannot be processed without knowing which project collection to write to.
   ///
   /// Returns the number of snags whose media was successfully uploaded.
   Future<int> processPendingUploads(FirestoreService firestoreService) async {
@@ -110,6 +125,12 @@ class OfflineQueueService {
     int processed = 0;
 
     for (final item in queue) {
+      // Discard legacy entries without a projectId — cannot route to correct path
+      if (item.projectId.isEmpty) {
+        processed++;
+        continue;
+      }
+
       try {
         final files = item.mediaFilePaths
             .map(File.new)
@@ -128,6 +149,7 @@ class OfflineQueueService {
                 (e) => firestoreService.uploadMediaFile(
                   e.value,
                   item.snagId,
+                  item.projectId,
                   index: e.key,
                 ),
               ),
@@ -135,7 +157,11 @@ class OfflineQueueService {
 
         final validUrls = urls.whereType<String>().toList();
         if (validUrls.isNotEmpty) {
-          await firestoreService.appendMediaUrls(item.snagId, validUrls);
+          await firestoreService.appendMediaUrls(
+            item.snagId,
+            item.projectId,
+            validUrls,
+          );
         }
 
         // Clean up local copies after successful upload
