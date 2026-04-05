@@ -5,20 +5,13 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
 import '../main.dart';
-import 'layout_drawings_screen.dart';
+import 'resources_screen.dart';
 import 'status_report_screen.dart';
 import 'report_screen.dart';
 import 'my_tasks_screen.dart';
-import 'pdf_viewer_screen.dart';
 
 class MainDashboardScreen extends StatelessWidget {
   const MainDashboardScreen({super.key});
-
-  // PDF URLs — replace with actual hosted URLs or asset paths in production
-  static const String kBenchmarkReportUrl =
-      'https://example.com/benchmark-report.pdf';
-  static const String kSpecificationsUrl =
-      'https://example.com/specifications.pdf';
 
   void _push(BuildContext context, Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
@@ -60,11 +53,8 @@ class MainDashboardScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.logout_outlined),
             tooltip: 'Logout',
-            onPressed: () {
-              context.read<AppState>().logout();
-              Navigator.of(context)
-                  .pushNamedAndRemoveUntil('/login', (r) => false);
-            },
+            onPressed: () => context.read<AppState>().signOut(),
+            // authStateChanges() handles navigation back to LoginScreen automatically
           ),
         ],
       ),
@@ -139,30 +129,21 @@ class MainDashboardScreen extends StatelessWidget {
                     label: 'Benchmark\nReport',
                     color: const Color(0xFF1565C0),
                     onTap: () => _push(
-                      context,
-                      const PdfViewerScreen(
-                        title: 'Benchmark Report',
-                        pdfUrl: kBenchmarkReportUrl,
-                      ),
-                    ),
+                        context, const ResourcesScreen(initialTab: 2)),
                   ),
                   _DashboardCard(
                     icon: Icons.description_outlined,
                     label: 'Specifications',
                     color: const Color(0xFF00695C),
                     onTap: () => _push(
-                      context,
-                      const PdfViewerScreen(
-                        title: 'Specifications',
-                        pdfUrl: kSpecificationsUrl,
-                      ),
-                    ),
+                        context, const ResourcesScreen(initialTab: 0)),
                   ),
                   _DashboardCard(
                     icon: Icons.map_outlined,
                     label: 'Layout\nDrawings',
                     color: const Color(0xFF6A1B9A),
-                    onTap: () => _push(context, const LayoutDrawingsScreen()),
+                    onTap: () => _push(
+                        context, const ResourcesScreen(initialTab: 1)),
                   ),
                   _DashboardCard(
                     icon: Icons.analytics_outlined,
@@ -178,7 +159,7 @@ class MainDashboardScreen extends StatelessWidget {
                   ),
                   _DashboardCard(
                     icon: Icons.format_list_bulleted,
-                    label: 'Defects List',
+                    label: 'Open Snags',
                     color: const Color(0xFFB71C1C),
                     onTap: () => _switchToDefectsList(context),
                   ),

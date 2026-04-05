@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../models/app_enums.dart';
+import '../models/config_models.dart';
 import '../models/snag_model.dart';
 import '../models/user_model.dart';
+import '../services/config_service.dart';
 import '../services/firestore_service.dart';
 
 class WeeklySnagData {
@@ -34,25 +38,89 @@ class WeeklySnagData {
 
 class AppState extends ChangeNotifier {
   final FirestoreService _service = FirestoreService();
-  StreamSubscription<List<SnagModel>>? _snagsSubscription;
+  final ConfigService _configService = ConfigService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  // ── Auth ───────────────────────────────────────────────────────────────────
   UserModel? _currentUser;
-  List<SnagModel> _snags = [];
+  bool _authLoading = true;
 
-  // Tracks async operations on the snag list (upload + Firestore write)
+  UserModel? get currentUser => _currentUser;
+  bool get isLoggedIn => _currentUser != null;
+  bool get authLoading => _authLoading;
+
+  // ── Snags ──────────────────────────────────────────────────────────────────
+  StreamSubscription<List<SnagModel>>? _snagsSubscription;
+  List<SnagModel> _snags = [];
   bool _isSyncing = false;
   String? _syncError;
 
   bool get isSyncing => _isSyncing;
   String? get syncError => _syncError;
 
+  // ── Config ─────────────────────────────────────────────────────────────────
+  StreamSubscription<List<TradeItem>>? _tradesSubscription;
+  StreamSubscription<List<LocationItem>>? _locationsSubscription;
+  List<TradeItem> _trades = [];
+  List<LocationItem> _locations = [];
+  bool _configLoading = true;
+
+  bool get configLoading => _configLoading;
+  List<TradeItem> get trades => List.unmodifiable(_trades);
+  List<LocationItem> get locations => List.unmodifiable(_locations);
+
   AppState() {
-    _subscribeToSnags();
+    // React to Firebase Auth state changes automatically
+    _auth.authStateChanges().listen((user) {
+      _authLoading = false;
+      if (user != null) {
+        _currentUser = UserModel.fromFirebaseUser(user);
+        _subscribeToSnags();
+        _subscribeToConfig();
+      } else {
+        _currentUser = null;
+        _cancelDataSubscriptions();
+        _snags = [];
+        _trades = [];
+        _locations = [];
+      }
+      notifyListeners();
+    });
   }
 
-  // ─── Firestore stream ──────────────────────────────────────────────────────
+  // ── Sign in with Google ────────────────────────────────────────────────────
+
+  Future<void> signInWithGoogle() async {
+    final googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) return; // user cancelled
+
+    final googleAuth = await googleUser.authentication;
+    final credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+
+    await _auth.signInWithCredential(credential);
+    // authStateChanges() listener above handles the rest automatically
+  }
+
+  // ── Sign out ───────────────────────────────────────────────────────────────
+
+  Future<void> signOut() async {
+    await _googleSignIn.signOut();
+    await _auth.signOut();
+    // authStateChanges() listener clears user + cancels subscriptions
+  }
+
+  // ── Legacy stub (kept so nothing else breaks during migration) ─────────────
+  Future<bool> login(String username, String password) async => false;
+  void logout() => signOut();
+
+  // ── Firestore subscriptions ────────────────────────────────────────────────
 
   void _subscribeToSnags() {
+    _snagsSubscription?.cancel();
     _snagsSubscription = _service.snagsStream.listen(
       (snagList) {
         _snags = snagList;
@@ -65,129 +133,124 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  void _subscribeToConfig() {
+    _tradesSubscription?.cancel();
+    _tradesSubscription = _configService.tradesStream.listen(
+      (trades) {
+        _trades = trades;
+        _configLoading = false;
+        notifyListeners();
+      },
+      onError: (_) {
+        _configLoading = false;
+        notifyListeners();
+      },
+    );
+
+    _locationsSubscription?.cancel();
+    _locationsSubscription = _configService.locationsStream.listen(
+      (locations) {
+        _locations = locations;
+        notifyListeners();
+      },
+    );
+  }
+
+  void _cancelDataSubscriptions() {
+    _snagsSubscription?.cancel();
+    _tradesSubscription?.cancel();
+    _locationsSubscription?.cancel();
+    _snagsSubscription = null;
+    _tradesSubscription = null;
+    _locationsSubscription = null;
+    _configLoading = true;
+  }
+
   @override
   void dispose() {
-    _snagsSubscription?.cancel();
+    _cancelDataSubscriptions();
     super.dispose();
   }
 
-  // ─── Auth ──────────────────────────────────────────────────────────────────
-  UserModel? get currentUser => _currentUser;
-  bool get isLoggedIn => _currentUser != null;
+  // ── Snag CRUD ──────────────────────────────────────────────────────────────
 
-  /// Simple credential check — will be replaced with Firebase Auth later.
-  Future<bool> login(String username, String password) async {
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    if (username.isNotEmpty && password.isNotEmpty) {
-      _currentUser = UserModel(
-        id: 'user_001',
-        username: username,
-        email: '$username@ppqa.com',
-        role: 'auditor',
-      );
-      notifyListeners();
-      return true;
-    }
-    return false;
-  }
-
-  void logout() {
-    _currentUser = null;
-    notifyListeners();
-  }
-
-  // ─── Snags ─────────────────────────────────────────────────────────────────
   List<SnagModel> get snags => List.unmodifiable(_snags);
 
-  /// Writes the snag to Firestore. If [imageFile] is provided it is uploaded
-  /// to Firebase Storage first. The stream listener updates [_snags] automatically
-  /// once Firestore confirms the write — no manual list manipulation needed.
-  Future<void> addSnag(SnagModel snag, {File? imageFile}) async {
+  Future<void> addSnag(SnagModel snag,
+      {List<File> mediaFiles = const []}) async {
     _isSyncing = true;
     _syncError = null;
     notifyListeners();
     try {
-      await _service.addSnag(snag, imageFile: imageFile);
+      await _service.addSnag(snag, mediaFiles: mediaFiles);
     } catch (e) {
       _syncError = e.toString();
-      rethrow; // Let the screen handle it with a SnackBar
+      rethrow;
     } finally {
       _isSyncing = false;
       notifyListeners();
     }
   }
 
-  /// Updates only the status field in Firestore.
   Future<void> updateSnagStatus(String snagId, SnagStatus newStatus) async {
     await _service.updateSnagStatus(snagId, newStatus);
-    // Stream update is automatic — no local mutation needed
   }
 
-  // ─── Computed Stats ────────────────────────────────────────────────────────
+  // ── Computed Stats ─────────────────────────────────────────────────────────
+
   int get totalSnags => _snags.length;
-
-  int get openSnags =>
-      _snags.where((s) => s.status == SnagStatus.open).length;
-
+  int get openSnags => _snags.where((s) => s.status == SnagStatus.open).length;
   int get inProgressSnags =>
       _snags.where((s) => s.status == SnagStatus.inProgress).length;
-
   int get closedSnags =>
       _snags.where((s) => s.status == SnagStatus.closed).length;
+  int get voidSnags =>
+      _snags.where((s) => s.status == SnagStatus.void_).length;
+
+  /// Counts open/in-progress snags by severity (excludes closed + void).
+  bool _isActive(SnagModel s) =>
+      s.status != SnagStatus.closed && s.status != SnagStatus.void_;
 
   int get redLineOpen => _snags
-      .where((s) =>
-          s.severity == SnagSeverity.redLine && s.status != SnagStatus.closed)
+      .where((s) => s.severity == SnagSeverity.redLine && _isActive(s))
       .length;
 
   int get majorOpen => _snags
-      .where((s) =>
-          s.severity == SnagSeverity.major && s.status != SnagStatus.closed)
+      .where((s) => s.severity == SnagSeverity.major && _isActive(s))
       .length;
 
   int get minorOpen => _snags
-      .where((s) =>
-          s.severity == SnagSeverity.minor && s.status != SnagStatus.closed)
+      .where((s) => s.severity == SnagSeverity.minor && _isActive(s))
       .length;
 
   double get percentClosed =>
       totalSnags == 0 ? 0 : (closedSnags / totalSnags) * 100;
 
-  // ─── Filtered Views ────────────────────────────────────────────────────────
+  // ── Filtered Views ─────────────────────────────────────────────────────────
+
   List<SnagModel> getSnagsBySeverity(SnagSeverity severity) =>
       _snags.where((s) => s.severity == severity).toList();
 
-  List<SnagModel> getSnagsByTrade(SnagTrade trade) =>
+  List<SnagModel> getSnagsByTrade(String trade) =>
       _snags.where((s) => s.trade == trade).toList();
 
-  List<SnagModel> getSnagsByLocation(SnagLocation location) =>
+  List<SnagModel> getSnagsByLocation(String location) =>
       _snags.where((s) => s.location == location).toList();
 
-  List<SnagModel> getSnagsByUnit(FlatNo unit) =>
+  List<SnagModel> getSnagsByUnit(String unit) =>
       _snags.where((s) => s.flatNo == unit).toList();
 
   List<SnagModel> getMySnags(String userId) =>
       _snags.where((s) => s.createdBy == userId).toList();
 
-  List<SnagModel> filterSnags({
-    DefectsListTrade? trade,
-    SnagTrade? category,
-  }) {
-    return _snags.where((s) {
-      if (category != null && s.trade != category) return false;
-      return true;
-    }).toList();
-  }
+  // ── Weekly Grouping ────────────────────────────────────────────────────────
 
-  // ─── Weekly Grouping ───────────────────────────────────────────────────────
   List<WeeklySnagData> getSnagsByWeek() {
     if (_snags.isEmpty) return [];
 
     final Map<DateTime, List<SnagModel>> grouped = {};
     for (final snag in _snags) {
-      final weekStart = snag.weekStart;
-      grouped.putIfAbsent(weekStart, () => []).add(snag);
+      grouped.putIfAbsent(snag.weekStart, () => []).add(snag);
     }
 
     final weeks = grouped.entries.toList()
@@ -199,46 +262,45 @@ class AppState extends ChangeNotifier {
         weekStart: entry.key,
         total: list.length,
         open: list.where((s) => s.status == SnagStatus.open).length,
-        inProgress: list.where((s) => s.status == SnagStatus.inProgress).length,
+        inProgress:
+            list.where((s) => s.status == SnagStatus.inProgress).length,
         closed: list.where((s) => s.status == SnagStatus.closed).length,
         redLineOpen: list
             .where((s) =>
-                s.severity == SnagSeverity.redLine &&
-                s.status != SnagStatus.closed)
+                s.severity == SnagSeverity.redLine && _isActive(s))
             .length,
         majorOpen: list
             .where((s) =>
-                s.severity == SnagSeverity.major &&
-                s.status != SnagStatus.closed)
+                s.severity == SnagSeverity.major && _isActive(s))
             .length,
         minorOpen: list
             .where((s) =>
-                s.severity == SnagSeverity.minor &&
-                s.status != SnagStatus.closed)
+                s.severity == SnagSeverity.minor && _isActive(s))
             .length,
       );
     }).toList();
   }
 
-  // ─── Trade / Location / Unit counts for reports ───────────────────────────
-  Map<SnagTrade, int> get snagCountByTrade {
-    final map = <SnagTrade, int>{};
+  // ── Count maps for Reports ─────────────────────────────────────────────────
+
+  Map<String, int> get snagCountByTrade {
+    final map = <String, int>{};
     for (final snag in _snags) {
       map[snag.trade] = (map[snag.trade] ?? 0) + 1;
     }
     return map;
   }
 
-  Map<SnagLocation, int> get snagCountByLocation {
-    final map = <SnagLocation, int>{};
+  Map<String, int> get snagCountByLocation {
+    final map = <String, int>{};
     for (final snag in _snags) {
       map[snag.location] = (map[snag.location] ?? 0) + 1;
     }
     return map;
   }
 
-  Map<FlatNo, int> get snagCountByUnit {
-    final map = <FlatNo, int>{};
+  Map<String, int> get snagCountByUnit {
+    final map = <String, int>{};
     for (final snag in _snags) {
       map[snag.flatNo] = (map[snag.flatNo] ?? 0) + 1;
     }

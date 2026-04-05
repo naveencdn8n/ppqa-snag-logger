@@ -18,12 +18,12 @@ class SheetsExportService {
 
   /// The long alphanumeric ID from your sheet's URL:
   /// https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
-  static const String _spreadsheetId = 'YOUR_SPREADSHEET_ID_HERE';
+  static const String _spreadsheetId = '1OTEnNiwq-guFoRmXy1akS-BzbsMOnuA9JWHHJaAAWbk';
 
   /// The tab name inside the spreadsheet where snags will be written.
   static const String _worksheetTitle = 'Snags';
 
-  // ── Column headers (A–N) ───────────────────────────────────────────────────
+  // ── Column headers (A–O) ───────────────────────────────────────────────────
   static const List<String> _headers = [
     'ID',
     'Created By',
@@ -31,6 +31,7 @@ class SheetsExportService {
     'Location',
     'Floor No',
     'Unit',
+    'Room',
     'Element',
     'Trade',
     'Defect Description',
@@ -79,15 +80,16 @@ class SheetsExportService {
               s.id,
               s.createdBy,
               _dateFmt.format(s.createdAt),
-              s.location.label,
-              s.floorNo.toString(),
-              s.flatNo.label,
-              s.element.label,
-              s.trade.label,
+              s.location,
+              s.floorNo,
+              s.flatNo,
+              s.room,
+              s.element,
+              s.trade,
               s.defectDescription,
               s.severity.label,
               s.status.label,
-              s.evidenceImagePath ?? '',
+              s.mediaUrls.join(', '), // all media URLs comma-separated
               s.notes ?? '',
               _dateFmt.format(s.weekStart),
             ])

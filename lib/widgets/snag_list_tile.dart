@@ -27,8 +27,16 @@ class SnagListTile extends StatelessWidget {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
-            '${snag.trade.label} · ${snag.location.label} · Floor ${snag.floorNo}',
+            [
+              snag.location,
+              if (snag.floorNo.isNotEmpty) 'Floor ${snag.floorNo}',
+              if (snag.flatNo.isNotEmpty) snag.flatNo,
+              if (snag.room.isNotEmpty) snag.room,
+              if (snag.trade.isNotEmpty) snag.trade,
+            ].join(' · '),
             style: const TextStyle(fontSize: 12, color: Color(0xFF6C757D)),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         trailing: _StatusChip(status: snag.status),

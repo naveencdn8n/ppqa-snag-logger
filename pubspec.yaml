@@ -16,8 +16,11 @@ dependencies:
   intl: ^0.20.2
   # Firebase
   firebase_core: ^3.12.1
+  firebase_auth: ^5.4.1
   cloud_firestore: ^5.6.5
   firebase_storage: ^12.4.4
+  # Google Sign-In
+  google_sign_in: ^6.2.2
   # Google Sheets export
   gsheets: ^0.5.0
 

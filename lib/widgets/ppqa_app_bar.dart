@@ -14,6 +14,7 @@ class PPQAAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.actions,
     this.showBack = false,
     this.onBack,
+    this.bottom,
   });
 
   final String title;
@@ -25,8 +26,13 @@ class PPQAAppBar extends StatelessWidget implements PreferredSizeWidget {
   /// Override the back-button behaviour (defaults to Navigator.pop).
   final VoidCallback? onBack;
 
+  /// Optional widget rendered below the toolbar (e.g. a [TabBar]).
+  final PreferredSizeWidget? bottom;
+
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => Size.fromHeight(
+        kToolbarHeight + (bottom?.preferredSize.height ?? 0),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +93,7 @@ class PPQAAppBar extends StatelessWidget implements PreferredSizeWidget {
         ],
       ),
       actions: actions,
+      bottom: bottom,
     );
   }
 }

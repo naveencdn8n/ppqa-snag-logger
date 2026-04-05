@@ -25,6 +25,7 @@ class PPQADropdown<T> extends StatelessWidget {
     this.itemColorBuilder,
     this.validator,
     this.isRequired = false,
+    this.hint,
   });
 
   final String label;
@@ -32,9 +33,11 @@ class PPQADropdown<T> extends StatelessWidget {
   final List<T> items;
   final String Function(T) labelBuilder;
   final Color Function(T)? itemColorBuilder;
-  final void Function(T?) onChanged;
+  final void Function(T?)? onChanged;
   final String? Function(T?)? validator;
   final bool isRequired;
+  /// Shown as the placeholder when [items] is empty or nothing is selected.
+  final String? hint;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +48,7 @@ class PPQADropdown<T> extends StatelessWidget {
       isExpanded: true,
       decoration: InputDecoration(
         labelText: isRequired ? '$label *' : label,
+        hintText: hint,
       ),
       items: items.map((item) {
         final dotColor = itemColorBuilder?.call(item);

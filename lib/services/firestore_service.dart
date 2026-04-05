@@ -30,20 +30,24 @@ class FirestoreService {
 
   // ─── Write: add snag ───────────────────────────────────────────────────────
 
-  /// Adds a new snag to Firestore. If [imageFile] is provided, it is uploaded
-  /// to Firebase Storage first and the download URL is stored in the document.
+  /// Adds a new snag to Firestore. Any [mediaFiles] are uploaded to Firebase
+  /// Storage first and their download URLs stored in [SnagModel.mediaUrls].
   ///
   /// The Firestore auto-ID becomes the snag's canonical [SnagModel.id].
-  Future<void> addSnag(SnagModel snag, {File? imageFile}) async {
-    // Reserve the document ID upfront so we can use it as the Storage filename
+  Future<void> addSnag(SnagModel snag, {List<File> mediaFiles = const []}) async {
+    // Reserve the document ID upfront so we can use it in Storage paths
     final docRef = _snagsRef.doc();
 
-    String? imageUrl;
-    if (imageFile != null) {
-      imageUrl = await _uploadPhoto(imageFile, docRef.id);
-    }
+    // Upload all media files in parallel
+    final urls = await Future.wait(
+      mediaFiles.asMap().entries.map(
+        (e) => _uploadMedia(e.value, docRef.id, index: e.key),
+      ),
+    );
 
-    // Build the final model with the Firestore doc ID and (optional) image URL
+    // Filter nulls (failed uploads) and build final model
+    final mediaUrls = urls.whereType<String>().toList();
+
     final finalSnag = SnagModel(
       id: docRef.id,
       createdBy: snag.createdBy,
@@ -56,7 +60,7 @@ class FirestoreService {
       defectDescription: snag.defectDescription,
       severity: snag.severity,
       status: snag.status,
-      evidenceImagePath: imageUrl,
+      mediaUrls: mediaUrls,
       notes: snag.notes,
     );
 
@@ -68,25 +72,35 @@ class FirestoreService {
   /// Updates only the [status] field of an existing snag document.
   /// All other fields are left untouched.
   Future<void> updateSnagStatus(String snagId, SnagStatus newStatus) async {
-    await _snagsRef.doc(snagId).update({'status': newStatus.name});
+    await _snagsRef.doc(snagId).update({'status': newStatus.firestoreValue});
   }
 
-  // ─── Storage: upload photo ─────────────────────────────────────────────────
+  // ─── Storage: upload media ─────────────────────────────────────────────────
 
-  /// Uploads [imageFile] to Firebase Storage under `evidence/{snagId}.jpg`.
-  /// Returns the public download URL on success, or `null` if the upload fails
-  /// (in which case the snag is still saved without a photo).
-  Future<String?> _uploadPhoto(File imageFile, String snagId) async {
+  /// Uploads a photo or video file to Firebase Storage.
+  /// Path: `evidence/{snagId}_{index}.{ext}`
+  /// Returns the download URL or null on failure (non-fatal).
+  Future<String?> _uploadMedia(File file, String snagId,
+      {required int index}) async {
     try {
-      final ref = _storage.ref().child('evidence/$snagId.jpg');
+      final path = file.path.toLowerCase();
+      final isVideo = path.endsWith('.mp4') ||
+          path.endsWith('.mov') ||
+          path.endsWith('.avi') ||
+          path.endsWith('.mkv');
+
+      final ext = isVideo ? 'mp4' : 'jpg';
+      final contentType = isVideo ? 'video/mp4' : 'image/jpeg';
+
+      final ref =
+          _storage.ref().child('evidence/${snagId}_$index.$ext');
       final task = await ref.putFile(
-        imageFile,
-        SettableMetadata(contentType: 'image/jpeg'),
+        file,
+        SettableMetadata(contentType: contentType),
       );
       return await task.ref.getDownloadURL();
-    } catch (e) {
-      // Upload failure is non-fatal — the snag is saved without a photo URL
-      return null;
+    } catch (_) {
+      return null; // non-fatal — snag is saved without this file
     }
   }
 }

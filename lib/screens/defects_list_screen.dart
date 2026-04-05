@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/app_enums.dart';
 import '../models/snag_model.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -17,62 +16,48 @@ class DefectsListScreen extends StatefulWidget {
 }
 
 class _DefectsListScreenState extends State<DefectsListScreen> {
-  DefectsListTrade? _selectedTrade;
-  SnagTrade? _selectedCategory;
+  String? _selectedTrade;
 
   List<SnagModel> _applyFilters(List<SnagModel> all) {
     return all.where((s) {
-      if (_selectedCategory != null && s.trade != _selectedCategory) return false;
+      if (_selectedTrade != null && s.trade != _selectedTrade) return false;
       return true;
     }).toList();
   }
 
-  void _clearFilters() {
-    setState(() {
-      _selectedTrade = null;
-      _selectedCategory = null;
-    });
-  }
+  void _clearFilters() => setState(() => _selectedTrade = null);
 
   @override
   Widget build(BuildContext context) {
-    final allSnags = context.watch<AppState>().snags;
-    final filtered = _applyFilters(allSnags.toList());
+    final appState = context.watch<AppState>();
+    final allSnags = appState.snags;
+    final filtered  = _applyFilters(allSnags.toList());
+
+    // Build trade names from snags that have been logged + admin-configured trades
+    final tradeNames = {
+      ...appState.trades.map((t) => t.name),
+      ...allSnags.map((s) => s.trade).where((t) => t.isNotEmpty),
+    }.toList()..sort();
 
     return Scaffold(
       appBar: const PPQAAppBar(title: 'Defects List'),
       body: Column(
         children: [
-          // ── Filter bar ────────────────────────────────────────────────────
+          // ── Filter bar ──────────────────────────────────────────────────────
           Container(
             color: const Color(0xFFECEFF4),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: PPQADropdown<DefectsListTrade>(
-                    label: 'Trade',
-                    value: _selectedTrade,
-                    items: DefectsListTrade.values,
-                    labelBuilder: (t) => t.label,
-                    onChanged: (val) => setState(() => _selectedTrade = val),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: PPQADropdown<SnagTrade>(
-                    label: 'Category',
-                    value: _selectedCategory,
-                    items: SnagTrade.values,
-                    labelBuilder: (t) => t.label,
-                    onChanged: (val) => setState(() => _selectedCategory = val),
-                  ),
-                ),
-              ],
+            child: PPQADropdown<String>(
+              label: 'Filter by Trade',
+              value: _selectedTrade,
+              items: tradeNames,
+              labelBuilder: (t) => t,
+              onChanged: (val) => setState(() => _selectedTrade = val),
+              hint: 'All trades',
             ),
           ),
 
-          // ── Results count + clear ─────────────────────────────────────────
+          // ── Results count + clear ───────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
@@ -86,10 +71,10 @@ class _DefectsListScreenState extends State<DefectsListScreen> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                if (_selectedTrade != null || _selectedCategory != null)
+                if (_selectedTrade != null)
                   TextButton.icon(
                     icon: const Icon(Icons.clear, size: 16),
-                    label: const Text('Clear Filters'),
+                    label: const Text('Clear Filter'),
                     onPressed: _clearFilters,
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.secondary,
@@ -102,7 +87,7 @@ class _DefectsListScreenState extends State<DefectsListScreen> {
             ),
           ),
 
-          // ── List ──────────────────────────────────────────────────────────
+          // ── List ────────────────────────────────────────────────────────────
           Expanded(
             child: filtered.isEmpty
                 ? Center(
@@ -120,7 +105,7 @@ class _DefectsListScreenState extends State<DefectsListScreen> {
                         Text(
                           allSnags.isEmpty
                               ? 'No snags logged yet.\nTap "Log Snag" to get started.'
-                              : 'No snags match the selected filters.',
+                              : 'No snags match the selected filter.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Color(0xFF6C757D),

@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +8,7 @@ import 'state/app_state.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_dashboard_screen.dart';
-import 'screens/defects_list_screen.dart';
+import 'screens/open_snags_screen.dart';
 import 'screens/log_snag_screen.dart';
 import 'screens/report_screen.dart';
 
@@ -33,16 +34,72 @@ class PPQAApp extends StatelessWidget {
       title: 'PPQA Snag Logger',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
-      initialRoute: '/login',
-      routes: {
-        '/login': (_) => const LoginScreen(),
-        '/home':  (_) => const AppShellScreen(),
-      },
+      // Stream-based routing — no manual Navigator.push needed for auth
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          // Still checking auth state — show splash
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const _SplashScreen();
+          }
+          // Signed in → go to app
+          if (snapshot.hasData) {
+            return const AppShellScreen();
+          }
+          // Not signed in → go to login
+          return const LoginScreen();
+        },
+      ),
     );
   }
 }
 
-// ─── App Shell (bottom nav + IndexedStack) ────────────────────────────────────
+// ── Splash screen (shown briefly while Firebase checks auth state) ─────────────
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.primary,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.domain_verification,
+                size: 64,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'PPQA Snag Logger',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 32),
+            const CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2.5,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── App Shell (bottom nav + IndexedStack) ─────────────────────────────────────
 class AppShellScreen extends StatefulWidget {
   const AppShellScreen({super.key});
 
@@ -50,21 +107,19 @@ class AppShellScreen extends StatefulWidget {
   State<AppShellScreen> createState() => AppShellScreenState();
 }
 
-/// State is public so MainDashboardScreen can find it via
+/// State is public so [MainDashboardScreen] can find it via
 /// [context.findAncestorStateOfType<AppShellScreenState>()].
 class AppShellScreenState extends State<AppShellScreen> {
   int _currentIndex = 0;
 
   static const List<Widget> _screens = [
     MainDashboardScreen(),
-    DefectsListScreen(),
+    OpenSnagsScreen(),
     LogSnagScreen(),
     ReportScreen(),
   ];
 
-  void switchTo(int index) {
-    setState(() => _currentIndex = index);
-  }
+  void switchTo(int index) => setState(() => _currentIndex = index);
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +140,7 @@ class AppShellScreenState extends State<AppShellScreen> {
           NavigationDestination(
             icon: Icon(Icons.list_alt_outlined),
             selectedIcon: Icon(Icons.list_alt),
-            label: 'Defect List',
+            label: 'Open Snags',
           ),
           NavigationDestination(
             icon: Icon(Icons.add_circle_outline),

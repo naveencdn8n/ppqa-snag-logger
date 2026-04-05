@@ -153,35 +153,17 @@ class _ReportScreenState extends State<ReportScreen> {
   }
 
   void _showTradeSheet(BuildContext context) {
-    final state = context.read<AppState>();
-    final raw = state.snagCountByTrade;
-    final data = <String, int>{
-      for (final entry in raw.entries) entry.key.label: entry.value
-    };
+    final data = context.read<AppState>().snagCountByTrade;
     _showReportSheet(context, 'Snags by Trade', data, {});
   }
 
   void _showTowerSheet(BuildContext context) {
-    final state = context.read<AppState>();
-    final towerLocations = [
-      SnagLocation.tower1,
-      SnagLocation.tower2,
-      SnagLocation.tower3,
-      SnagLocation.tower4,
-    ];
-    final data = <String, int>{
-      for (final loc in towerLocations)
-        loc.label: state.getSnagsByLocation(loc).length,
-    };
-    _showReportSheet(context, 'Snags by Tower', data, {});
+    final data = context.read<AppState>().snagCountByLocation;
+    _showReportSheet(context, 'Snags by Location', data, {});
   }
 
   void _showUnitSheet(BuildContext context) {
-    final state = context.read<AppState>();
-    final raw = state.snagCountByUnit;
-    final data = <String, int>{
-      for (final entry in raw.entries) entry.key.label: entry.value
-    };
+    final data = context.read<AppState>().snagCountByUnit;
     _showReportSheet(context, 'Snags by Unit', data, {});
   }
 
