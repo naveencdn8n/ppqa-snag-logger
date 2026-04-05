@@ -16,6 +16,36 @@ class FirestoreService {
   CollectionReference<Map<String, dynamic>> get _snagsRef =>
       _db.collection('snags');
 
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _db.collection('users');
+
+  // ─── User profiles ─────────────────────────────────────────────────────────
+
+  /// Upserts the signed-in user's display name into the `users` collection.
+  /// Called on every sign-in so the name is always current.
+  Future<void> saveUserProfile(
+      String uid, String displayName, String email) async {
+    await _usersRef.doc(uid).set({
+      'displayName': displayName,
+      'email': email,
+      'lastSeen': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Real-time stream of uid → displayName for all team members.
+  Stream<Map<String, String>> get usersStream {
+    return _usersRef.snapshots().map((snap) {
+      final map = <String, String>{};
+      for (final doc in snap.docs) {
+        final name = doc.data()['displayName'] as String?;
+        if (name != null && name.isNotEmpty) {
+          map[doc.id] = name;
+        }
+      }
+      return map;
+    });
+  }
+
   // ─── Snag stream ───────────────────────────────────────────────────────────
 
   /// Real-time stream of all snags, ordered newest first.

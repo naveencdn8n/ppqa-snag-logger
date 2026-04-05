@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/snag_model.dart';
 import '../models/app_enums.dart';
+import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +14,9 @@ class SnagDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final inspectorName =
+        context.watch<AppState>().resolveInspector(snag.createdBy);
+
     return Scaffold(
       appBar: const PPQAAppBar(title: 'Snag Detail'),
       body: SingleChildScrollView(
@@ -107,7 +112,7 @@ class SnagDetailScreen extends StatelessWidget {
               title: 'Logged By',
               icon: Icons.person_outline,
               children: [
-                _DetailRow(label: 'Inspector', value: snag.createdBy),
+                _DetailRow(label: 'Inspector', value: inspectorName),
                 _DetailRow(
                   label: 'Date & Time',
                   value: DateFormat('dd MMM yyyy, HH:mm').format(snag.createdAt),

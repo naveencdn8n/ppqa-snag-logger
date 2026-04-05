@@ -59,6 +59,21 @@ class AppState extends ChangeNotifier {
   bool get isSyncing => _isSyncing;
   String? get syncError => _syncError;
 
+  // ── User profiles (uid → displayName) ─────────────────────────────────────
+  StreamSubscription<Map<String, String>>? _usersSubscription;
+  Map<String, String> _userProfiles = {};
+
+  /// Resolves a [createdBy] value to a human-readable display name.
+  /// Handles both old snags (stored UID) and new snags (stored display name).
+  String resolveInspector(String createdBy) {
+    if (createdBy.isEmpty) return 'Unknown';
+    // If it's a known UID, return the mapped display name
+    final resolved = _userProfiles[createdBy];
+    if (resolved != null) return resolved;
+    // Already a display name (not a UID in our map)
+    return createdBy;
+  }
+
   // ── Config ─────────────────────────────────────────────────────────────────
   StreamSubscription<List<TradeItem>>? _tradesSubscription;
   StreamSubscription<List<LocationItem>>? _locationsSubscription;
@@ -76,14 +91,22 @@ class AppState extends ChangeNotifier {
       _authLoading = false;
       if (user != null) {
         _currentUser = UserModel.fromFirebaseUser(user);
+        // Upsert display name into Firestore users collection (fire-and-forget)
+        _service.saveUserProfile(
+          user.uid,
+          user.displayName ?? user.email?.split('@').first ?? 'User',
+          user.email ?? '',
+        );
         _subscribeToSnags();
         _subscribeToConfig();
+        _subscribeToUsers();
       } else {
         _currentUser = null;
         _cancelDataSubscriptions();
         _snags = [];
         _trades = [];
         _locations = [];
+        _userProfiles = {};
       }
       notifyListeners();
     });
@@ -156,13 +179,23 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  void _subscribeToUsers() {
+    _usersSubscription?.cancel();
+    _usersSubscription = _service.usersStream.listen((profiles) {
+      _userProfiles = profiles;
+      notifyListeners();
+    });
+  }
+
   void _cancelDataSubscriptions() {
     _snagsSubscription?.cancel();
     _tradesSubscription?.cancel();
     _locationsSubscription?.cancel();
+    _usersSubscription?.cancel();
     _snagsSubscription = null;
     _tradesSubscription = null;
     _locationsSubscription = null;
+    _usersSubscription = null;
     _configLoading = true;
   }
 
@@ -240,13 +273,26 @@ class AppState extends ChangeNotifier {
   List<SnagModel> getSnagsByUnit(String unit) =>
       _snags.where((s) => s.flatNo == unit).toList();
 
-  List<SnagModel> getMySnags(String myName) =>
-      _snags.where((s) => s.createdBy == myName).toList();
+  /// Returns snags logged by the current user.
+  /// Matches both new snags (display name) and old snags (UID stored before fix).
+  List<SnagModel> getMySnags(String myName) {
+    final myUid = _currentUser?.id ?? '';
+    return _snags
+        .where((s) => s.createdBy == myName || s.createdBy == myUid)
+        .toList();
+  }
 
-  /// All snags logged by other team members (excludes current user and blanks).
-  List<SnagModel> getTeamSnags(String myName) => _snags
-      .where((s) => s.createdBy != myName && s.createdBy.isNotEmpty)
-      .toList();
+  /// Returns snags logged by other team members.
+  /// Excludes current user's snags (both by name and by old UID).
+  List<SnagModel> getTeamSnags(String myName) {
+    final myUid = _currentUser?.id ?? '';
+    return _snags
+        .where((s) =>
+            s.createdBy != myName &&
+            s.createdBy != myUid &&
+            s.createdBy.isNotEmpty)
+        .toList();
+  }
 
   // ── Weekly Grouping ────────────────────────────────────────────────────────
 

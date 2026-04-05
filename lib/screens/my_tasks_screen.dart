@@ -261,6 +261,7 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                 _TeamSnagsList(
                   snags: teamSnags,
                   total: teamTotal,
+                  resolveInspector: appState.resolveInspector,
                   onTap: (snag) => Navigator.of(context).push(
                     MaterialPageRoute(
                         builder: (_) => SnagDetailScreen(snag: snag)),
@@ -325,12 +326,14 @@ class _TeamSnagsList extends StatelessWidget {
   const _TeamSnagsList({
     required this.snags,
     required this.total,
+    required this.resolveInspector,
     required this.onTap,
     required this.onChangeStatus,
   });
 
   final List<SnagModel> snags;
   final int total;
+  final String Function(String) resolveInspector;
   final void Function(SnagModel) onTap;
   final void Function(SnagModel) onChangeStatus;
 
@@ -347,10 +350,11 @@ class _TeamSnagsList extends StatelessWidget {
       return const _NoMatchState();
     }
 
-    // Group snags by inspector (createdBy), sorted alphabetically by name
+    // Group snags by resolved inspector display name, sorted alphabetically
     final Map<String, List<SnagModel>> grouped = {};
     for (final snag in snags) {
-      grouped.putIfAbsent(snag.createdBy, () => []).add(snag);
+      final name = resolveInspector(snag.createdBy);
+      grouped.putIfAbsent(name, () => []).add(snag);
     }
     final sortedNames = grouped.keys.toList()..sort();
 
