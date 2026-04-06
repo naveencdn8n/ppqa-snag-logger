@@ -10,6 +10,7 @@ import 'screens/login_screen.dart';
 import 'screens/main_dashboard_screen.dart';
 import 'screens/open_snags_screen.dart';
 import 'screens/log_snag_screen.dart';
+import 'screens/project_selector_screen.dart';
 import 'screens/report_screen.dart';
 
 void main() async {
@@ -52,7 +53,13 @@ class PPQAApp extends StatelessWidget {
           if (!appState.isLoggedIn) return const LoginScreen();
           // Signed in but blocked → blocked screen
           if (appState.isBlocked) return const _BlockedScreen();
-          // Active user → main app
+          // Waiting for project list from Firestore
+          if (appState.projectsLoading) return const _SplashScreen();
+          // No active project: show picker (handles both 0 and multiple projects)
+          if (!appState.hasActiveProject) {
+            return const ProjectSelectorScreen(showBack: false);
+          }
+          // Active project selected → main app
           return const AppShellScreen();
         },
       ),

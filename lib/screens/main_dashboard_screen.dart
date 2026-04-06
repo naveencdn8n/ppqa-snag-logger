@@ -5,6 +5,8 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
 import '../main.dart';
+import 'migration_screen.dart';
+import 'project_selector_screen.dart';
 import 'resources_screen.dart';
 import 'status_report_screen.dart';
 import 'report_screen.dart';
@@ -29,7 +31,11 @@ class MainDashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AppState>().currentUser;
+    final appState = context.watch<AppState>();
+    final user = appState.currentUser;
+    final isAdmin = appState.isAdmin;
+    final activeProject = appState.activeProject;
+    final canSwitchProject = appState.availableProjects.length > 1;
 
     return Scaffold(
       appBar: PPQAAppBar(
@@ -95,6 +101,57 @@ class MainDashboardScreen extends StatelessWidget {
                                 fontSize: 12,
                               ),
                             ),
+                            if (activeProject != null) ...[
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: canSwitchProject
+                                    ? () => _push(context,
+                                        const ProjectSelectorScreen(
+                                            showBack: true))
+                                    : null,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: Color(activeProject.color),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          activeProject.shortName,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (canSwitchProject) ...[
+                                        const SizedBox(width: 4),
+                                        const Icon(
+                                          Icons.swap_horiz_rounded,
+                                          color: Colors.white70,
+                                          size: 14,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -169,6 +226,15 @@ class MainDashboardScreen extends StatelessWidget {
                     color: const Color(0xFF1A3A5C),
                     onTap: () => _push(context, const MyTasksScreen()),
                   ),
+                  // Migration card — admin only, v2 transition tool
+                  if (isAdmin)
+                    _DashboardCard(
+                      icon: Icons.cloud_sync_outlined,
+                      label: 'Data\nMigration',
+                      color: const Color(0xFF6A1B9A),
+                      badge: 'ADMIN',
+                      onTap: () => _push(context, const MigrationScreen()),
+                    ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -186,12 +252,16 @@ class _DashboardCard extends StatelessWidget {
     required this.label,
     required this.color,
     required this.onTap,
+    this.badge,
   });
 
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback onTap;
+
+  /// Optional small badge shown in the top-right corner (e.g. 'ADMIN').
+  final String? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -200,32 +270,59 @@ class _DashboardCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, size: 28, color: color),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, size: 28, color: color),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF212529),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF212529),
-                  height: 1.3,
+            ),
+            // Admin / role badge in top-right corner
+            if (badge != null)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    badge!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );

@@ -7,12 +7,14 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import '../models/app_enums.dart';
 import '../models/config_models.dart';
+import '../models/project_model.dart';
 import '../models/snag_model.dart';
 import '../models/user_model.dart';
 import '../services/config_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/firestore_service.dart';
 import '../services/offline_queue_service.dart';
+import '../services/project_service.dart';
 
 class WeeklySnagData {
   final DateTime weekStart;
@@ -43,6 +45,7 @@ class AppState extends ChangeNotifier {
   final ConfigService _configService = ConfigService();
   final ConnectivityService _connectivityService = ConnectivityService();
   final OfflineQueueService _offlineQueueService = OfflineQueueService();
+  final ProjectService _projectService = ProjectService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
@@ -73,6 +76,42 @@ class AppState extends ChangeNotifier {
   bool get canChangeOwnStatus => _currentUser?.canChangeOwnStatus ?? false;
   bool get isViewOnly => _currentUser?.isViewOnly ?? true;
 
+  /// True when the user is a global admin (web portal + migration screen access).
+  bool get isAdmin => _currentUser?.isAdmin ?? false;
+
+  // ── Projects ───────────────────────────────────────────────────────────────
+  StreamSubscription<List<ProjectModel>>? _projectsSubscription;
+  List<ProjectModel> _availableProjects = [];
+  String? _activeProjectId;
+  bool _projectsLoading = true;
+
+  List<ProjectModel> get availableProjects =>
+      List.unmodifiable(_availableProjects);
+  String? get activeProjectId => _activeProjectId;
+  bool get projectsLoading => _projectsLoading;
+
+  /// True when a project has been selected and data streams are live.
+  bool get hasActiveProject => _activeProjectId != null;
+
+  /// The currently active [ProjectModel], or null if none selected yet.
+  ProjectModel? get activeProject => _availableProjects
+      .where((p) => p.id == _activeProjectId)
+      .firstOrNull;
+
+  /// Switches to the given project: re-subscribes all data streams.
+  void setActiveProject(String projectId) {
+    if (_activeProjectId == projectId) return;
+    _activeProjectId = projectId;
+    _cancelDataSubscriptions(keepProjects: true);
+    _snags = [];
+    _trades = [];
+    _locations = [];
+    _configLoading = true;
+    notifyListeners();
+    _subscribeToSnags();
+    _subscribeToConfig();
+  }
+
   // ── Snags ──────────────────────────────────────────────────────────────────
   StreamSubscription<List<SnagModel>>? _snagsSubscription;
   List<SnagModel> _snags = [];
@@ -90,10 +129,8 @@ class AppState extends ChangeNotifier {
   /// Handles both old snags (stored UID) and new snags (stored display name).
   String resolveInspector(String createdBy) {
     if (createdBy.isEmpty) return 'Unknown';
-    // If it's a known UID, return the mapped display name
     final resolved = _userProfiles[createdBy];
     if (resolved != null) return resolved;
-    // Already a display name (not a UID in our map)
     return createdBy;
   }
 
@@ -116,6 +153,9 @@ class AppState extends ChangeNotifier {
         _authLoading = false;
         _roleLoading = false;
         _currentUser = null;
+        _activeProjectId = null;
+        _availableProjects = [];
+        _projectsLoading = true;
         _cancelDataSubscriptions();
         _snags = [];
         _trades = [];
@@ -147,8 +187,7 @@ class AppState extends ChangeNotifier {
         user.displayName ?? user.email?.split('@').first ?? 'User',
         user.email ?? '',
       );
-      _subscribeToSnags();
-      _subscribeToConfig();
+      _subscribeToProjects(user.uid);
       _subscribeToUsers();
       notifyListeners();
     });
@@ -158,7 +197,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> signInWithGoogle() async {
     final googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) return; // user cancelled
+    if (googleUser == null) return;
 
     final googleAuth = await googleUser.authentication;
     final credential = GoogleAuthProvider.credential(
@@ -167,7 +206,6 @@ class AppState extends ChangeNotifier {
     );
 
     await _auth.signInWithCredential(credential);
-    // authStateChanges() listener above handles the rest automatically
   }
 
   // ── Connectivity ──────────────────────────────────────────────────────────
@@ -183,21 +221,18 @@ class AppState extends ChangeNotifier {
       _isOnline = online;
       notifyListeners();
 
-      // Process queued uploads when coming back online
       if (online && wasOffline && _pendingUploadCount > 0) {
         await _processPendingUploads();
       }
     });
   }
 
-  /// Uploads all queued offline media. Called automatically on reconnect.
   Future<void> _processPendingUploads() async {
     if (_isSyncingPending) return;
     _isSyncingPending = true;
     notifyListeners();
 
     try {
-      // Small delay so Firestore can flush its own offline queue first
       await Future.delayed(const Duration(seconds: 3));
       await _offlineQueueService.processPendingUploads(_service);
     } catch (_) {
@@ -214,18 +249,55 @@ class AppState extends ChangeNotifier {
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await _auth.signOut();
-    // authStateChanges() listener clears user + cancels subscriptions
   }
 
   // ── Legacy stub (kept so nothing else breaks during migration) ─────────────
   Future<bool> login(String username, String password) async => false;
   void logout() => signOut();
 
+  // ── Project subscription ───────────────────────────────────────────────────
+
+  void _subscribeToProjects(String uid) {
+    _projectsSubscription?.cancel();
+    _projectsLoading = true;
+
+    _projectsSubscription =
+        _projectService.userProjectsStream(uid).listen((projects) {
+      _availableProjects = projects;
+      _projectsLoading = false;
+
+      // Auto-select the only project — no selector screen needed
+      if (projects.length == 1 && _activeProjectId != projects.first.id) {
+        _activeProjectId = projects.first.id;
+        _subscribeToSnags();
+        _subscribeToConfig();
+      }
+
+      // If the active project was removed from the list, clear it
+      if (_activeProjectId != null &&
+          !projects.any((p) => p.id == _activeProjectId)) {
+        _activeProjectId = null;
+        _cancelDataSubscriptions(keepProjects: true);
+        _snags = [];
+        _trades = [];
+        _locations = [];
+      }
+
+      notifyListeners();
+    }, onError: (_) {
+      _projectsLoading = false;
+      notifyListeners();
+    });
+  }
+
   // ── Firestore subscriptions ────────────────────────────────────────────────
 
   void _subscribeToSnags() {
+    final pid = _activeProjectId;
+    if (pid == null) return;
+
     _snagsSubscription?.cancel();
-    _snagsSubscription = _service.snagsStream.listen(
+    _snagsSubscription = _service.snagsStream(pid).listen(
       (snagList) {
         _snags = snagList;
         notifyListeners();
@@ -238,8 +310,11 @@ class AppState extends ChangeNotifier {
   }
 
   void _subscribeToConfig() {
+    final pid = _activeProjectId;
+    if (pid == null) return;
+
     _tradesSubscription?.cancel();
-    _tradesSubscription = _configService.tradesStream.listen(
+    _tradesSubscription = _configService.tradesStream(pid).listen(
       (trades) {
         _trades = trades;
         _configLoading = false;
@@ -252,7 +327,7 @@ class AppState extends ChangeNotifier {
     );
 
     _locationsSubscription?.cancel();
-    _locationsSubscription = _configService.locationsStream.listen(
+    _locationsSubscription = _configService.locationsStream(pid).listen(
       (locations) {
         _locations = locations;
         notifyListeners();
@@ -268,7 +343,9 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  void _cancelDataSubscriptions() {
+  /// Cancels snag / config / users subscriptions.
+  /// Pass [keepProjects] = true when switching projects (don't re-fetch project list).
+  void _cancelDataSubscriptions({bool keepProjects = false}) {
     _snagsSubscription?.cancel();
     _tradesSubscription?.cancel();
     _locationsSubscription?.cancel();
@@ -278,6 +355,11 @@ class AppState extends ChangeNotifier {
     _locationsSubscription = null;
     _usersSubscription = null;
     _configLoading = true;
+
+    if (!keepProjects) {
+      _projectsSubscription?.cancel();
+      _projectsSubscription = null;
+    }
   }
 
   @override
@@ -293,19 +375,19 @@ class AppState extends ChangeNotifier {
 
   Future<void> addSnag(SnagModel snag,
       {List<File> mediaFiles = const []}) async {
+    final pid = _activeProjectId;
+    if (pid == null) throw StateError('No active project selected');
+
     _isSyncing = true;
     _syncError = null;
     notifyListeners();
     try {
       if (_isOnline) {
-        // Online: upload media + save to Firestore normally
-        await _service.addSnag(snag, mediaFiles: mediaFiles);
+        await _service.addSnag(snag, pid, mediaFiles: mediaFiles);
       } else {
-        // Offline: save snag text to Firestore offline cache (auto-syncs later)
-        // and queue any media files for upload when connectivity returns
-        final snagId = await _service.addSnagOffline(snag);
+        final snagId = await _service.addSnagOffline(snag, pid);
         if (mediaFiles.isNotEmpty) {
-          await _offlineQueueService.enqueue(snagId, mediaFiles);
+          await _offlineQueueService.enqueue(snagId, pid, mediaFiles);
           _pendingUploadCount = await _offlineQueueService.pendingCount;
         }
       }
@@ -319,7 +401,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> updateSnagStatus(String snagId, SnagStatus newStatus) async {
-    await _service.updateSnagStatus(snagId, newStatus);
+    final pid = _activeProjectId;
+    if (pid == null) return;
+    await _service.updateSnagStatus(snagId, pid, newStatus);
   }
 
   // ── Computed Stats ─────────────────────────────────────────────────────────
@@ -333,7 +417,6 @@ class AppState extends ChangeNotifier {
   int get voidSnags =>
       _snags.where((s) => s.status == SnagStatus.void_).length;
 
-  /// Counts open/in-progress snags by severity (excludes closed + void).
   bool _isActive(SnagModel s) =>
       s.status != SnagStatus.closed && s.status != SnagStatus.void_;
 
@@ -367,7 +450,6 @@ class AppState extends ChangeNotifier {
       _snags.where((s) => s.flatNo == unit).toList();
 
   /// Returns snags logged by the current user.
-  /// Matches both new snags (display name) and old snags (UID stored before fix).
   List<SnagModel> getMySnags(String myName) {
     final myUid = _currentUser?.id ?? '';
     return _snags
@@ -376,7 +458,6 @@ class AppState extends ChangeNotifier {
   }
 
   /// Returns snags logged by other team members.
-  /// Excludes current user's snags (both by name and by old UID).
   List<SnagModel> getTeamSnags(String myName) {
     final myUid = _currentUser?.id ?? '';
     return _snags

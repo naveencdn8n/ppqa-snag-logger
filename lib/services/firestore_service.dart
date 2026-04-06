@@ -9,17 +9,27 @@ import '../models/snag_model.dart';
 /// Handles all reads and writes to Cloud Firestore and Firebase Storage.
 /// No Flutter widgets or BuildContext are used here — this class is purely
 /// a data layer and can be tested independently.
+///
+/// All snag operations are project-scoped (v2):
+///   `projects/{projectId}/snags/{snagId}`
+///
+/// User profile operations remain at the top-level `users` collection
+/// because users are global across all projects.
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  CollectionReference<Map<String, dynamic>> get _snagsRef =>
-      _db.collection('snags');
+  // ── Collection references ──────────────────────────────────────────────────
 
+  /// Snags sub-collection for the given project.
+  CollectionReference<Map<String, dynamic>> _snagsRef(String projectId) =>
+      _db.collection('projects').doc(projectId).collection('snags');
+
+  /// Global users collection — not project-scoped.
   CollectionReference<Map<String, dynamic>> get _usersRef =>
       _db.collection('users');
 
-  // ─── User profiles ─────────────────────────────────────────────────────────
+  // ── User profiles ──────────────────────────────────────────────────────────
 
   /// Upserts the signed-in user's display name into the `users` collection.
   /// Called on every sign-in so the name is always current.
@@ -32,7 +42,7 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  /// Fetches a user's Firestore profile (role, status, displayName).
+  /// Fetches a user's Firestore profile (role, status, isAdmin, displayName).
   /// Returns an empty map if the document doesn't exist yet (new user).
   Future<Map<String, dynamic>> getUserProfileData(String uid) async {
     try {
@@ -57,32 +67,39 @@ class FirestoreService {
     });
   }
 
-  // ─── Snag stream ───────────────────────────────────────────────────────────
+  // ── Snag stream ────────────────────────────────────────────────────────────
 
-  /// Real-time stream of all snags, ordered newest first.
-  /// Every device listening to this stream will receive updates automatically
-  /// when any team member logs or updates a snag.
-  Stream<List<SnagModel>> get snagsStream {
-    return _snagsRef
+  /// Real-time stream of all snags in [projectId], ordered newest first.
+  Stream<List<SnagModel>> snagsStream(String projectId) {
+    return _snagsRef(projectId)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snap) => snap.docs.map(SnagModel.fromFirestore).toList());
   }
 
-  // ─── Write: add snag ───────────────────────────────────────────────────────
+  // ── Write: add snag ────────────────────────────────────────────────────────
 
-  /// Adds a new snag to Firestore. Any [mediaFiles] are uploaded to Firebase
-  /// Storage first and their download URLs stored in [SnagModel.mediaUrls].
+  /// Adds a new snag to the given project. Any [mediaFiles] are uploaded to
+  /// Firebase Storage first and their download URLs stored on the snag.
   ///
   /// The Firestore auto-ID becomes the snag's canonical [SnagModel.id].
-  Future<void> addSnag(SnagModel snag, {List<File> mediaFiles = const []}) async {
+  Future<void> addSnag(
+    SnagModel snag,
+    String projectId, {
+    List<File> mediaFiles = const [],
+  }) async {
     // Reserve the document ID upfront so we can use it in Storage paths
-    final docRef = _snagsRef.doc();
+    final docRef = _snagsRef(projectId).doc();
 
     // Upload all media files in parallel
     final urls = await Future.wait(
       mediaFiles.asMap().entries.map(
-        (e) => _uploadMedia(e.value, docRef.id, index: e.key),
+        (e) => _uploadMedia(
+          e.value,
+          docRef.id,
+          projectId: projectId,
+          index: e.key,
+        ),
       ),
     );
 
@@ -108,51 +125,69 @@ class FirestoreService {
     await docRef.set(finalSnag.toMap());
   }
 
-  // ─── Write: add snag offline (no media) ───────────────────────────────────
+  // ── Write: add snag offline (no media) ────────────────────────────────────
 
   /// Saves a snag to Firestore without any media files.
   /// Used when the device is offline — Firestore's offline cache queues the
   /// write and syncs automatically once connectivity is restored.
   ///
   /// Returns the generated document ID so it can be used in the media queue.
-  Future<String> addSnagOffline(SnagModel snag) async {
-    final docRef = _snagsRef.doc();
+  Future<String> addSnagOffline(SnagModel snag, String projectId) async {
+    final docRef = _snagsRef(projectId).doc();
     final finalSnag = snag.copyWith(id: docRef.id, mediaUrls: const []);
     await docRef.set(finalSnag.toMap());
     return docRef.id;
   }
 
-  // ─── Write: update status ──────────────────────────────────────────────────
+  // ── Write: update status ───────────────────────────────────────────────────
 
   /// Updates only the [status] field of an existing snag document.
   /// All other fields are left untouched.
-  Future<void> updateSnagStatus(String snagId, SnagStatus newStatus) async {
-    await _snagsRef.doc(snagId).update({'status': newStatus.firestoreValue});
+  Future<void> updateSnagStatus(
+    String snagId,
+    String projectId,
+    SnagStatus newStatus,
+  ) async {
+    await _snagsRef(projectId)
+        .doc(snagId)
+        .update({'status': newStatus.firestoreValue});
   }
 
-  // ─── Write: append media URLs (used after offline upload) ─────────────────
+  // ── Write: append media URLs (used after offline upload) ──────────────────
 
   /// Appends [urls] to an existing snag's [mediaUrls] list using arrayUnion.
   /// Uses set+merge so it is safe even if the doc hasn't fully synced yet.
-  Future<void> appendMediaUrls(String snagId, List<String> urls) async {
-    await _snagsRef.doc(snagId).set(
+  Future<void> appendMediaUrls(
+    String snagId,
+    String projectId,
+    List<String> urls,
+  ) async {
+    await _snagsRef(projectId).doc(snagId).set(
       {'mediaUrls': FieldValue.arrayUnion(urls)},
       SetOptions(merge: true),
     );
   }
 
-  // ─── Storage: upload media ─────────────────────────────────────────────────
+  // ── Storage: upload media ──────────────────────────────────────────────────
 
   /// Public wrapper used by [OfflineQueueService] to re-upload queued files.
-  Future<String?> uploadMediaFile(File file, String snagId,
-          {required int index}) =>
-      _uploadMedia(file, snagId, index: index);
+  Future<String?> uploadMediaFile(
+    File file,
+    String snagId,
+    String projectId, {
+    required int index,
+  }) =>
+      _uploadMedia(file, snagId, projectId: projectId, index: index);
 
   /// Uploads a photo or video file to Firebase Storage.
-  /// Path: `evidence/{snagId}_{index}.{ext}`
+  /// Path: `evidence/{projectId}/{snagId}_{index}.{ext}`
   /// Returns the download URL or null on failure (non-fatal).
-  Future<String?> _uploadMedia(File file, String snagId,
-      {required int index}) async {
+  Future<String?> _uploadMedia(
+    File file,
+    String snagId, {
+    required String projectId,
+    required int index,
+  }) async {
     try {
       final path = file.path.toLowerCase();
       final isVideo = path.endsWith('.mp4') ||
@@ -163,8 +198,9 @@ class FirestoreService {
       final ext = isVideo ? 'mp4' : 'jpg';
       final contentType = isVideo ? 'video/mp4' : 'image/jpeg';
 
-      final ref =
-          _storage.ref().child('evidence/${snagId}_$index.$ext');
+      final ref = _storage
+          .ref()
+          .child('evidence/$projectId/${snagId}_$index.$ext');
       final task = await ref.putFile(
         file,
         SettableMetadata(contentType: contentType),
