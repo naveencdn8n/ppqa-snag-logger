@@ -35,12 +35,19 @@ class MainDashboardScreen extends StatelessWidget {
     final user = appState.currentUser;
     final isAdmin = appState.isAdmin;
     final activeProject = appState.activeProject;
-    final canSwitchProject = appState.availableProjects.length > 1;
+    final hasMultipleProjects = appState.availableProjects.length > 1;
 
     return Scaffold(
       appBar: PPQAAppBar(
         title: 'Dashboard',
         actions: [
+          // Always-visible project switcher button
+          IconButton(
+            icon: const Icon(Icons.swap_horiz_rounded),
+            tooltip: 'Switch Project',
+            onPressed: () => _push(
+                context, const ProjectSelectorScreen(showBack: true)),
+          ),
           if (user != null)
             Padding(
               padding: const EdgeInsets.only(right: 4),
@@ -60,7 +67,6 @@ class MainDashboardScreen extends StatelessWidget {
             icon: const Icon(Icons.logout_outlined),
             tooltip: 'Logout',
             onPressed: () => context.read<AppState>().signOut(),
-            // authStateChanges() handles navigation back to LoginScreen automatically
           ),
         ],
       ),
@@ -104,11 +110,9 @@ class MainDashboardScreen extends StatelessWidget {
                             if (activeProject != null) ...[
                               const SizedBox(height: 8),
                               GestureDetector(
-                                onTap: canSwitchProject
-                                    ? () => _push(context,
-                                        const ProjectSelectorScreen(
-                                            showBack: true))
-                                    : null,
+                                onTap: () => _push(context,
+                                    const ProjectSelectorScreen(
+                                        showBack: true)),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 10, vertical: 5),
@@ -139,14 +143,14 @@ class MainDashboardScreen extends StatelessWidget {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      if (canSwitchProject) ...[
-                                        const SizedBox(width: 4),
-                                        const Icon(
-                                          Icons.swap_horiz_rounded,
-                                          color: Colors.white70,
-                                          size: 14,
-                                        ),
-                                      ],
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        hasMultipleProjects
+                                            ? Icons.swap_horiz_rounded
+                                            : Icons.chevron_right_rounded,
+                                        color: Colors.white70,
+                                        size: 14,
+                                      ),
                                     ],
                                   ),
                                 ),
