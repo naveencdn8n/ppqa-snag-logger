@@ -6,6 +6,7 @@ import '../models/app_enums.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
+import 'migration_screen.dart';
 
 /// Shown when the user belongs to multiple projects and must choose one,
 /// or when they want to switch projects from inside the app.
@@ -49,6 +50,8 @@ class ProjectSelectorScreen extends StatelessWidget {
   // ── Empty state ──────────────────────────────────────────────────────────────
 
   Widget _buildEmptyState(BuildContext context) {
+    final isAdmin = context.read<AppState>().isAdmin;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(36),
@@ -78,9 +81,12 @@ class ProjectSelectorScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'You have not been added to any project yet.\n'
-              'Please ask your administrator to run the data migration '
-              'or add you to a project.',
+              isAdmin
+                  ? 'No projects exist yet. Run the data migration to\n'
+                    'set up your first project from existing snag data.'
+                  : 'You have not been added to any project yet.\n'
+                    'Please ask your administrator to run the data\n'
+                    'migration or add you to a project.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -88,14 +94,36 @@ class ProjectSelectorScreen extends StatelessWidget {
                 height: 1.5,
               ),
             ),
-            const SizedBox(height: 36),
+            const SizedBox(height: 32),
+
+            // ── Admin: Run Migration button ──────────────────────────────
+            if (isAdmin) ...[
+              FilledButton.icon(
+                icon: const Icon(Icons.sync_rounded),
+                label: const Text('Run Data Migration'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const MigrationScreen(),
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 28, vertical: 14),
+                  textStyle: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             OutlinedButton.icon(
               icon: const Icon(Icons.logout_rounded),
               label: const Text('Sign Out'),
               onPressed: () => context.read<AppState>().signOut(),
               style: OutlinedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 28, vertical: 14),
                 textStyle: const TextStyle(
                     fontSize: 15, fontWeight: FontWeight.w600),
               ),
