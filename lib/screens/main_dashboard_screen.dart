@@ -9,6 +9,7 @@ import 'migration_screen.dart';
 import 'project_selector_screen.dart';
 import 'resources_screen.dart';
 import 'status_report_screen.dart';
+import 'tower_report_screen.dart';
 import 'report_screen.dart';
 import 'my_tasks_screen.dart';
 
@@ -211,6 +212,12 @@ class MainDashboardScreen extends StatelessWidget {
                     label: 'Status\nReport',
                     color: const Color(0xFF558B2F),
                     onTap: () => _push(context, const StatusReportScreen()),
+                  ),
+                  _DashboardCard(
+                    icon: Icons.location_city_outlined,
+                    label: 'Tower\nReport',
+                    color: const Color(0xFF00695C),
+                    onTap: () => _push(context, const TowerReportScreen()),
                   ),
                   _DashboardCard(
                     icon: Icons.summarize_outlined,

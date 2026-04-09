@@ -92,6 +92,7 @@ class _MyTasksScreenState extends State<MyTasksScreen>
     final locationNames = appState.locations.map((l) => l.name).toList();
     final floors = _floorsFor(appState);
 
+    final serialMap = appState.snagSerialMap;
     final mySnags = _applyFilters(appState.getMySnags(myName));
     final teamSnags = _applyFilters(appState.getTeamSnags(myName));
     final myTotal = appState.getMySnags(myName).length;
@@ -254,10 +255,14 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                 _MySnagsList(
                   snags: mySnags,
                   total: myTotal,
+                  serialMap: serialMap,
                   canChangeStatus: canChangeOwn,
                   onTap: (snag) => Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (_) => SnagDetailScreen(snag: snag)),
+                        builder: (_) => SnagDetailScreen(
+                              snag: snag,
+                              serialNumber: serialMap[snag.id],
+                            )),
                   ),
                   onChangeStatus: (snag) => _showStatusSheet(context, snag),
                 ),
@@ -266,11 +271,15 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                 _TeamSnagsList(
                   snags: teamSnags,
                   total: teamTotal,
+                  serialMap: serialMap,
                   resolveInspector: appState.resolveInspector,
                   canChangeStatus: canChangeAny,
                   onTap: (snag) => Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (_) => SnagDetailScreen(snag: snag)),
+                        builder: (_) => SnagDetailScreen(
+                              snag: snag,
+                              serialNumber: serialMap[snag.id],
+                            )),
                   ),
                   onChangeStatus: (snag) => _showStatusSheet(context, snag),
                 ),
@@ -289,6 +298,7 @@ class _MySnagsList extends StatelessWidget {
   const _MySnagsList({
     required this.snags,
     required this.total,
+    required this.serialMap,
     required this.canChangeStatus,
     required this.onTap,
     required this.onChangeStatus,
@@ -296,6 +306,7 @@ class _MySnagsList extends StatelessWidget {
 
   final List<SnagModel> snags;
   final int total;
+  final Map<String, int> serialMap;
   final bool canChangeStatus;
   final void Function(SnagModel) onTap;
   final void Function(SnagModel) onChangeStatus;
@@ -319,6 +330,7 @@ class _MySnagsList extends StatelessWidget {
         final snag = snags[i];
         return _TaskCard(
           snag: snag,
+          serialNumber: serialMap[snag.id],
           showInspector: false,
           canChangeStatus: canChangeStatus,
           onTap: () => onTap(snag),
@@ -335,6 +347,7 @@ class _TeamSnagsList extends StatelessWidget {
   const _TeamSnagsList({
     required this.snags,
     required this.total,
+    required this.serialMap,
     required this.resolveInspector,
     required this.canChangeStatus,
     required this.onTap,
@@ -343,6 +356,7 @@ class _TeamSnagsList extends StatelessWidget {
 
   final List<SnagModel> snags;
   final int total;
+  final Map<String, int> serialMap;
   final String Function(String) resolveInspector;
   final bool canChangeStatus;
   final void Function(SnagModel) onTap;
@@ -390,6 +404,7 @@ class _TeamSnagsList extends StatelessWidget {
         final snag = (item as _SnagItem).snag;
         return _TaskCard(
           snag: snag,
+          serialNumber: serialMap[snag.id],
           showInspector: false, // name already shown in group header
           canChangeStatus: canChangeStatus,
           onTap: () => onTap(snag),
@@ -473,6 +488,7 @@ class _InspectorHeader extends StatelessWidget {
 class _TaskCard extends StatelessWidget {
   const _TaskCard({
     required this.snag,
+    this.serialNumber,
     required this.showInspector,
     required this.canChangeStatus,
     required this.onTap,
@@ -480,6 +496,7 @@ class _TaskCard extends StatelessWidget {
   });
 
   final SnagModel snag;
+  final int? serialNumber;
   final bool showInspector;
   final bool canChangeStatus;
   final VoidCallback onTap;
@@ -501,6 +518,31 @@ class _TaskCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Serial badge
+                  if (serialNumber != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      margin: const EdgeInsets.only(right: 6, top: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A3A5C).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color:
+                              const Color(0xFF1A3A5C).withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        '#$serialNumber',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1A3A5C),
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                  ],
                   Expanded(
                     child: Text(
                       snag.defectDescription,

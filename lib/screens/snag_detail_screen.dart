@@ -8,17 +8,26 @@ import '../widgets/ppqa_app_bar.dart';
 import 'package:intl/intl.dart';
 
 class SnagDetailScreen extends StatelessWidget {
-  const SnagDetailScreen({super.key, required this.snag});
+  const SnagDetailScreen({
+    super.key,
+    required this.snag,
+    this.serialNumber,
+  });
 
   final SnagModel snag;
+  final int? serialNumber;
 
   @override
   Widget build(BuildContext context) {
     final inspectorName =
         context.watch<AppState>().resolveInspector(snag.createdBy);
 
+    final appTitle = serialNumber != null
+        ? 'Snag #$serialNumber'
+        : 'Snag Detail';
+
     return Scaffold(
-      appBar: const PPQAAppBar(title: 'Snag Detail'),
+      appBar: PPQAAppBar(title: appTitle),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -60,6 +69,10 @@ class SnagDetailScreen extends StatelessWidget {
                           const SizedBox(height: 6),
                           Row(
                             children: [
+                              if (serialNumber != null) ...[
+                                _SerialBadge(number: serialNumber!),
+                                const SizedBox(width: 8),
+                              ],
                               _Chip(
                                 label: snag.severity.label,
                                 color: snag.severity.color,
@@ -117,6 +130,12 @@ class SnagDetailScreen extends StatelessWidget {
                   label: 'Date & Time',
                   value: DateFormat('dd MMM yyyy, HH:mm').format(snag.createdAt),
                 ),
+                if (serialNumber != null)
+                  _DetailRow(
+                    label: 'Serial No.',
+                    value: '#$serialNumber',
+                  ),
+                _DetailRow(label: 'Snag ID', value: snag.id),
                 if (snag.notes != null && snag.notes!.isNotEmpty)
                   _DetailRow(label: 'Notes', value: snag.notes!),
               ],
@@ -290,6 +309,35 @@ class _DetailRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SerialBadge extends StatelessWidget {
+  const _SerialBadge({required this.number});
+  final int number;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A3A5C).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: const Color(0xFF1A3A5C).withValues(alpha: 0.25),
+        ),
+      ),
+      child: Text(
+        '#$number',
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF1A3A5C),
+          fontFamily: 'monospace',
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }

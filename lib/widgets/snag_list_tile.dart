@@ -3,10 +3,16 @@ import '../models/snag_model.dart';
 import '../models/app_enums.dart';
 
 /// A list tile representing a single snag entry.
+/// Pass [serialNumber] to show a stable #N badge (oldest snag = #1).
 class SnagListTile extends StatelessWidget {
-  const SnagListTile({super.key, required this.snag});
+  const SnagListTile({
+    super.key,
+    required this.snag,
+    this.serialNumber,
+  });
 
   final SnagModel snag;
+  final int? serialNumber;
 
   @override
   Widget build(BuildContext context) {
@@ -15,12 +21,44 @@ class SnagListTile extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: _SeverityAvatar(severity: snag.severity),
-        title: Text(
-          snag.defectDescription,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Serial number badge ────────────────────────────────────────
+            if (serialNumber != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                margin: const EdgeInsets.only(right: 6, top: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A3A5C).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: const Color(0xFF1A3A5C).withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Text(
+                  '#$serialNumber',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1A3A5C),
+                    fontFamily: 'monospace',
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+            ],
+            // ── Description ────────────────────────────────────────────────
+            Expanded(
+              child: Text(
+                snag.defectDescription,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
