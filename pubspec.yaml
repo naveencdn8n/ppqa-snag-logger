@@ -19,6 +19,7 @@ dependencies:
   firebase_auth: ^5.4.1
   cloud_firestore: ^5.6.5
   firebase_storage: ^12.4.4
+  firebase_crashlytics: ^4.3.3
   # Google Sign-In
   google_sign_in: ^6.2.2
   # Google Sheets export
@@ -31,9 +32,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/
     - assets/credentials/
+
+flutter_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/app_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#1A3A5C"
+  adaptive_icon_foreground: "assets/images/app_icon_foreground.png"
