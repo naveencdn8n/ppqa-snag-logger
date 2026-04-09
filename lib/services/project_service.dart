@@ -26,14 +26,17 @@ class ProjectService {
 
   /// Projects where [uid] is a member — for the mobile project selector.
   Stream<List<ProjectModel>> userProjectsStream(String uid) {
-    // Firestore doesn't support collection-group queries with sub-collection
-    // filters in a single call, so we store a denormalised `memberUids` array
-    // on the project document for efficient querying.
+    // arrayContains alone does not require a composite index.
+    // Sorting is done client-side to avoid any index-building delay that
+    // would silently return empty results during the build window.
     return _projects
         .where('memberUids', arrayContains: uid)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map(ProjectModel.fromFirestore).toList());
+        .map((snap) {
+          final list = snap.docs.map(ProjectModel.fromFirestore).toList();
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return list;
+        });
   }
 
   /// Single project by ID — useful for detail screens.
