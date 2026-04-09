@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PPQA App Icon Designer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a14;
+      color: #c8ccd6;
+      min-height: 100vh;
+      padding: 28px 16px 48px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #5a607a;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 28px;
+    }
+
+    .layout {
+      display: flex;
+      gap: 28px;
+      max-width: 1060px;
+      margin: 0 auto;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    /* ── Controls panel ── */
+    .panel {
+      background: #12121f;
+      border: 1px solid #1e1e30;
+      border-radius: 16px;
+      padding: 22px 20px;
+      width: 310px;
+      flex-shrink: 0;
+    }
+
+    .sec {
+      font-size: 10px;
+      font-weight: 700;
+      color: #3d4265;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      margin: 20px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #1a1a2e;
+    }
+    .sec:first-child { margin-top: 0; }
+
+    .row2 { display: flex; gap: 10px; }
+    .row2 > .field { flex: 1; }
+
+    .field { margin-bottom: 12px; }
+    .field label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #5a607a;
+      margin-bottom: 5px;
+    }
+    .field label span { color: #7c84a0; font-weight: 600; }
+
+    input[type=color] {
+      width: 100%;
+      height: 34px;
+      border: 1px solid #1e1e30;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #0a0a14;
+      padding: 2px;
+    }
+
+    input[type=range] {
+      width: 100%;
+      height: 3px;
+      accent-color: #534AB7;
+      cursor: pointer;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 11px 16px;
+      border-radius: 10px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      letter-spacing: 0.3px;
+      transition: transform .1s, opacity .1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-dl { background: #534AB7; color: #fff; }
+    .btn-dl2 { background: #3C3489; color: #fff; }
+    .btn-both { background: linear-gradient(135deg, #534AB7, #3C3489); color: #fff; margin-top: 14px; }
+
+    /* ── Preview area ── */
+    .previews { flex: 1; min-width: 280px; }
+
+    .preview-grid {
+      display: flex;
+      gap: 16px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .pv { text-align: center; }
+    .pv canvas { display: block; border-radius: 22.5%; }
+    .pv .lbl { font-size: 10px; color: #3d4265; margin-top: 7px; letter-spacing: 0.5px; }
+
+    .bg-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .bg-pv {
+      flex: 1;
+      min-width: 80px;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .bg-pv canvas { border-radius: 22.5%; }
+    .bg-pv .lbl { font-size: 10px; color: #3d4265; }
+
+    .cmd-box {
+      background: #0d0d1a;
+      border: 1px solid #1e1e30;
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .cmd-title { font-size: 10px; color: #3d4265; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 10px; }
+    .cmd-box code { font-size: 12px; color: #7c84ff; line-height: 2; display: block; }
+    .cmd-note { font-size: 11px; color: #3d4265; margin-top: 10px; }
+    .cmd-note code { color: #5a607a; font-size: 11px; display: inline; }
+
+    .reset-btn {
+      display: block;
+      width: 100%;
+      padding: 7px;
+      background: none;
+      border: 1px solid #1e1e30;
+      border-radius: 8px;
+      color: #3d4265;
+      font-size: 11px;
+      cursor: pointer;
+      margin-top: 14px;
+      transition: border-color .15s, color .15s;
+    }
+    .reset-btn:hover { border-color: #534AB7; color: #7c84ff; }
+  </style>
+</head>
+<body>
+
+<h1>PPQA Snag Logger — App Icon Designer</h1>
+
+<div class="layout">
+
+  <!-- ── Controls ── -->
+  <div class="panel">
+
+    <div class="sec">Background Gradient</div>
+    <div class="row2">
+      <div class="field">
+        <label>Top-left <span id="bg1v">#534AB7</span></label>
+        <input type="color" id="bg1" value="#534AB7" oninput="bg1v.textContent=this.value;draw()">
+      </div>
+      <div class="field">
+        <label>Bottom-right <span id="bg2v">#3C3489</span></label>
+        <input type="color" id="bg2" value="#3C3489" oninput="bg2v.textContent=this.value;draw()">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Corner radius <span id="radv">22%</span></label>
+      <input type="range" id="rad" min="5" max="50" value="22" oninput="radv.textContent=this.value+'%';draw()">
+    </div>
+
+    <div class="sec">Outer Ring</div>
+    <div class="field">
+      <label>Diameter <span id="orDv">52%</span></label>
+      <input type="range" id="orD" min="30" max="85" value="52" oninput="orDv.textContent=this.value+'%';draw()">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Opacity <span id="orOv">21%</span></label>
+        <input type="range" id="orO" min="5" max="80" value="21" oninput="orOv.textContent=this.value+'%';draw()">
+      </div>
+      <div class="field">
+        <label>Stroke <span id="orSv">1.5px</span></label>
+        <input type="range" id="orS" min="5" max="60" value="15" oninput="orSv.textContent=(this.value/10).toFixed(1)+'px';draw()">
+      </div>
+    </div>
+
+    <div class="sec">Inner Ring</div>
+    <div class="field">
+      <label>Diameter <span id="irDv">30%</span></label>
+      <input type="range" id="irD" min="10" max="60" value="30" oninput="irDv.textContent=this.value+'%';draw()">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Opacity <span id="irOv">35%</span></label>
+        <input type="range" id="irO" min="5" max="80" value="35" oninput="irOv.textContent=this.value+'%';draw()">
+      </div>
+      <div class="field">
+        <label>Stroke <span id="irSv">1.2px</span></label>
+        <input type="range" id="irS" min="5" max="60" value="12" oninput="irSv.textContent=(this.value/10).toFixed(1)+'px';draw()">
+      </div>
+    </div>
+
+    <div class="sec">Crosshair Lines</div>
+    <div class="field">
+      <label>Gap from outer ring <span id="chGv">4%</span></label>
+      <input type="range" id="chG" min="0" max="15" value="4" oninput="chGv.textContent=this.value+'%';draw()">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Opacity <span id="chOv">22%</span></label>
+        <input type="range" id="chO" min="5" max="80" value="22" oninput="chOv.textContent=this.value+'%';draw()">
+      </div>
+      <div class="field">
+        <label>Stroke <span id="chSv">1.5px</span></label>
+        <input type="range" id="chS" min="5" max="60" value="15" oninput="chSv.textContent=(this.value/10).toFixed(1)+'px';draw()">
+      </div>
+    </div>
+    <div class="field">
+      <label>Length (reach toward edge) <span id="chLv">46%</span></label>
+      <input type="range" id="chL" min="30" max="49" value="46" oninput="chLv.textContent=this.value+'%';draw()">
+    </div>
+
+    <div class="sec">Checkmark</div>
+    <div class="field">
+      <label>Size <span id="ckSv">60%</span></label>
+      <input type="range" id="ckS" min="20" max="95" value="60" oninput="ckSv.textContent=this.value+'%';draw()">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Stroke weight <span id="ckWv">3.8px</span></label>
+        <input type="range" id="ckW" min="10" max="100" value="38" oninput="ckWv.textContent=(this.value/10).toFixed(1)+'px';draw()">
+      </div>
+      <div class="field">
+        <label>Vertical offset <span id="ckVv">0</span></label>
+        <input type="range" id="ckV" min="-30" max="30" value="2" oninput="ckVv.textContent=this.value;draw()">
+      </div>
+    </div>
+    <div class="field">
+      <label>Colour</label>
+      <input type="color" id="ckC" value="#FFFFFF" oninput="draw()">
+    </div>
+
+    <button class="reset-btn" onclick="resetDefaults()">↺ Reset to Reference Design</button>
+
+    <div class="sec">Download</div>
+    <button class="btn btn-dl" onclick="dlFull()">⬇ app_icon.png (512 × 512)</button>
+    <button class="btn btn-dl2" onclick="dlFg()">⬇ app_icon_foreground.png (transparent)</button>
+    <button class="btn btn-both" onclick="dlBoth()">⬇ Download Both Files</button>
+  </div>
+
+  <!-- ── Previews ── -->
+  <div class="previews">
+
+    <!-- Main sizes -->
+    <div class="preview-grid">
+      <div class="pv">
+        <canvas id="c512" width="1024" height="1024" style="width:200px;height:200px"></canvas>
+        <div class="lbl">Play Store · 512 px</div>
+      </div>
+      <div class="pv">
+        <canvas id="c192" width="384" height="384" style="width:96px;height:96px"></canvas>
+        <div class="lbl">Home screen</div>
+      </div>
+      <div class="pv">
+        <canvas id="c96" width="192" height="192" style="width:72px;height:72px"></canvas>
+        <div class="lbl">Launcher</div>
+      </div>
+      <div class="pv">
+        <canvas id="c48" width="96" height="96" style="width:48px;height:48px"></canvas>
+        <div class="lbl">Small</div>
+      </div>
+    </div>
+
+    <!-- Background context previews -->
+    <div class="bg-row">
+      <div class="bg-pv" style="background:#f0f0f4">
+        <canvas id="cLight" width="192" height="192" style="width:64px;height:64px"></canvas>
+        <div class="lbl">Light</div>
+      </div>
+      <div class="bg-pv" style="background:#111118">
+        <canvas id="cDark" width="192" height="192" style="width:64px;height:64px"></canvas>
+        <div class="lbl">Dark</div>
+      </div>
+      <div class="bg-pv" style="background:#e4e4ea">
+        <canvas id="cGray" width="192" height="192" style="width:64px;height:64px"></canvas>
+        <div class="lbl">Gray</div>
+      </div>
+      <div class="bg-pv" style="background:linear-gradient(135deg,#667eea,#764ba2)">
+        <canvas id="cColor" width="192" height="192" style="width:64px;height:64px"></canvas>
+        <div class="lbl">Colorful</div>
+      </div>
+    </div>
+
+    <!-- Command -->
+    <div class="cmd-box">
+      <div class="cmd-title">After downloading → copy files to assets/images/ → run:</div>
+      <code>cd D:\Claude\ppqa_snag_logger</code>
+      <code>dart run flutter_launcher_icons</code>
+      <div class="cmd-note">Generates all mipmap sizes in <code>android/app/src/main/res/mipmap-*/</code><br>Then rebuild: <code>flutter build apk --release</code></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── All canvases to keep in sync ──────────────────────────────────────────────
+const ALL = ['c512','c192','c96','c48','cLight','cDark','cGray','cColor'];
+
+// ── Read control values ───────────────────────────────────────────────────────
+const v = id => document.getElementById(id).value;
+const n = id => parseFloat(v(id));
+
+function params() {
+  return {
+    bg1:  v('bg1'),
+    bg2:  v('bg2'),
+    rad:  n('rad')  / 100,
+    orD:  n('orD')  / 100,   // outer ring diameter as fraction
+    orO:  n('orO')  / 100,
+    orS:  n('orS')  / 10,    // px relative to 1024
+    irD:  n('irD')  / 100,
+    irO:  n('irO')  / 100,
+    irS:  n('irS')  / 10,
+    chG:  n('chG')  / 100,   // gap fraction
+    chO:  n('chO')  / 100,
+    chS:  n('chS')  / 10,
+    chL:  n('chL')  / 100,   // line end reach fraction
+    ckS:  n('ckS')  / 100,   // checkmark size rel to inner ring
+    ckW:  n('ckW')  / 10,
+    ckV:  n('ckV'),
+    ckC:  v('ckC'),
+  };
+}
+
+// ── Draw a single canvas ──────────────────────────────────────────────────────
+function drawCanvas(canvas, p) {
+  const W = canvas.width;
+  const ctx = canvas.getContext('2d');
+  const sc = W / 1024;         // scale factor (all measurements spec'd at 1024px)
+  const cx = W / 2;
+  const cy = W / 2;
+
+  ctx.clearRect(0, 0, W, W);
+
+  // ── Rounded square clip ───────────────────────────────────────────────────
+  const r = W * p.rad;
+  roundRect(ctx, 0, 0, W, W, r);
+  ctx.save();
+  ctx.clip();
+
+  // ── Background gradient (diagonal top-left → bottom-right) ───────────────
+  const grd = ctx.createLinearGradient(0, 0, W, W);
+  grd.addColorStop(0, p.bg1);
+  grd.addColorStop(1, p.bg2);
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, W);
+
+  ctx.restore();
+
+  // ── Helper: stroke circle ─────────────────────────────────────────────────
+  function strokeCircle(radius, lineWidth, opacity) {
+    ctx.save();
+    ctx.strokeStyle = `rgba(255,255,255,${opacity})`;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── Outer ring ────────────────────────────────────────────────────────────
+  const outerR = (W * p.orD) / 2;
+  strokeCircle(outerR, p.orS * sc, p.orO);
+
+  // ── Inner ring ────────────────────────────────────────────────────────────
+  const innerR = (W * p.irD) / 2;
+  strokeCircle(innerR, p.irS * sc, p.irO);
+
+  // ── Crosshair lines (4 cardinal directions) ───────────────────────────────
+  const gapPx   = W * p.chG;
+  const lineStart = outerR + gapPx;
+  const lineEnd   = W * p.chL;
+
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,255,255,${p.chO})`;
+  ctx.lineWidth = p.chS * sc;
+  ctx.lineCap = 'square';
+
+  // Top
+  ctx.beginPath(); ctx.moveTo(cx, cy - lineStart); ctx.lineTo(cx, cy - lineEnd); ctx.stroke();
+  // Bottom
+  ctx.beginPath(); ctx.moveTo(cx, cy + lineStart); ctx.lineTo(cx, cy + lineEnd); ctx.stroke();
+  // Left
+  ctx.beginPath(); ctx.moveTo(cx - lineStart, cy); ctx.lineTo(cx - lineEnd, cy); ctx.stroke();
+  // Right
+  ctx.beginPath(); ctx.moveTo(cx + lineStart, cy); ctx.lineTo(cx + lineEnd, cy); ctx.stroke();
+
+  ctx.restore();
+
+  // ── Checkmark ─────────────────────────────────────────────────────────────
+  // Checkmark is sized relative to inner ring radius, centered at (cx, cy + ckV)
+  const ckR  = innerR * p.ckS;
+  const ckOff = p.ckV * sc;
+  const ckCy = cy + ckOff;
+
+  // Points: p1 (start), p2 (bend), p3 (end)
+  // Left short stroke goes down-right, right longer stroke goes up-right
+  // Tuned to match the reference image geometry
+  const p1 = { x: cx - ckR * 0.52, y: ckCy + ckR * 0.05 };
+  const p2 = { x: cx - ckR * 0.05, y: ckCy + ckR * 0.52 };
+  const p3 = { x: cx + ckR * 0.60, y: ckCy - ckR * 0.38 };
+
+  ctx.save();
+  ctx.strokeStyle = p.ckC;
+  ctx.lineWidth   = p.ckW * sc;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctx.beginPath();
+  ctx.moveTo(p1.x, p1.y);
+  ctx.lineTo(p2.x, p2.y);
+  ctx.lineTo(p3.x, p3.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Draw all previews ─────────────────────────────────────────────────────────
+function draw() {
+  const p = params();
+  ALL.forEach(id => {
+    const c = document.getElementById(id);
+    if (c) drawCanvas(c, p);
+  });
+}
+
+// ── Rounded rect path helper ──────────────────────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ── Download helpers ──────────────────────────────────────────────────────────
+function dlFull() {
+  // Render at exactly 512×512 for the full icon
+  const c = Object.assign(document.createElement('canvas'), {width:512, height:512});
+  drawCanvas(c, params());
+  triggerDownload(c, 'app_icon.png');
+}
+
+function dlFg() {
+  // Foreground: same design but transparent background (only the symbol elements)
+  const p = params();
+  const W = 512;
+  const c = Object.assign(document.createElement('canvas'), {width:W, height:W});
+  const ctx = c.getContext('2d');
+  const sc  = W / 1024;
+  const cx = W / 2, cy = W / 2;
+
+  // Draw rings + crosshairs + checkmark on transparent background
+  function strokeCircle(r, lw, op) {
+    ctx.save();
+    ctx.strokeStyle = `rgba(255,255,255,${op})`;
+    ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
+  const outerR = (W * p.orD) / 2;
+  const innerR = (W * p.irD) / 2;
+  strokeCircle(outerR, p.orS * sc, p.orO);
+  strokeCircle(innerR, p.irS * sc, p.irO);
+
+  const gapPx = W * p.chG;
+  const lineStart = outerR + gapPx;
+  const lineEnd   = W * p.chL;
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,255,255,${p.chO})`;
+  ctx.lineWidth = p.chS * sc;
+  ctx.lineCap = 'square';
+  [[cx, cy-lineStart, cx, cy-lineEnd],
+   [cx, cy+lineStart, cx, cy+lineEnd],
+   [cx-lineStart, cy, cx-lineEnd, cy],
+   [cx+lineStart, cy, cx+lineEnd, cy]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  ctx.restore();
+
+  const ckR  = innerR * p.ckS;
+  const ckCy = cy + p.ckV * sc;
+  const p1 = { x: cx - ckR*0.52, y: ckCy + ckR*0.05 };
+  const p2 = { x: cx - ckR*0.05, y: ckCy + ckR*0.52 };
+  const p3 = { x: cx + ckR*0.60, y: ckCy - ckR*0.38 };
+  ctx.save();
+  ctx.strokeStyle = p.ckC;
+  ctx.lineWidth   = p.ckW * sc;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.lineTo(p3.x,p3.y); ctx.stroke();
+  ctx.restore();
+
+  triggerDownload(c, 'app_icon_foreground.png');
+}
+
+function triggerDownload(canvas, filename) {
+  const a = Object.assign(document.createElement('a'), {
+    download: filename,
+    href: canvas.toDataURL('image/png')
+  });
+  a.click();
+}
+
+function dlBoth() {
+  dlFull();
+  setTimeout(dlFg, 400);
+}
+
+// ── Reset to reference defaults ───────────────────────────────────────────────
+function resetDefaults() {
+  const set = (id, val) => { document.getElementById(id).value = val; };
+  set('bg1','#534AB7'); set('bg2','#3C3489');
+  set('rad', 22);
+  set('orD', 52); set('orO', 21); set('orS', 15);
+  set('irD', 30); set('irO', 35); set('irS', 12);
+  set('chG',  4); set('chO', 22); set('chS', 15); set('chL', 46);
+  set('ckS', 60); set('ckW', 38); set('ckV', 2); set('ckC','#FFFFFF');
+  // update display labels
+  bg1v.textContent='#534AB7'; bg2v.textContent='#3C3489';
+  radv.textContent='22%';
+  orDv.textContent='52%'; orOv.textContent='21%'; orSv.textContent='1.5px';
+  irDv.textContent='30%'; irOv.textContent='35%'; irSv.textContent='1.2px';
+  chGv.textContent='4%';  chOv.textContent='22%'; chSv.textContent='1.5px'; chLv.textContent='46%';
+  ckSv.textContent='60%'; ckWv.textContent='3.8px'; ckVv.textContent='2';
+  draw();
+}
+
+// Initial render
+draw();
+</script>
+</body>
+</html>
