@@ -11,6 +11,7 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
 import '../widgets/ppqa_dropdown.dart';
+import 'markup_viewer_screen.dart';
 
 class LogSnagScreen extends StatefulWidget {
   const LogSnagScreen({super.key});
@@ -41,6 +42,11 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
   static const int _maxMedia = 6;
 
   bool _isSubmitting = false;
+
+  /// Incremented on each form reset to force a full rebuild of all
+  /// DropdownButtonFormFields (which keep internal state that reset() alone
+  /// does not always clear visually).
+  int _formVersion = 0;
 
   @override
   void dispose() {
@@ -220,6 +226,10 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
   }
 
   void _resetForm() {
+    // Clear controllers first, before setState triggers a rebuild
+    _customDefectController.clear();
+    _notesController.clear();
+    _roomController.clear();
     setState(() {
       _location = null;
       _floor = null;
@@ -231,11 +241,10 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
       _useCustomDefect = false;
       _severity = null;
       _mediaFiles.clear();
+      // Incrementing the version forces all dropdown children to rebuild fresh,
+      // clearing their internal FormField state along with the displayed value.
+      _formVersion++;
     });
-    _customDefectController.clear();
-    _notesController.clear();
-    _roomController.clear();
-    _formKey.currentState!.reset();
   }
 
   // ── Cascade helpers ────────────────────────────────────────────────────────
@@ -341,6 +350,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
+                  key: ValueKey(_formVersion),
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // ── Section 1: Location ─────────────────────────────────
@@ -634,6 +644,21 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
                       maxFiles: _maxMedia,
                       onAdd: _showMediaPicker,
                       onRemove: _removeMedia,
+                      onMarkup: (int index, XFile original) async {
+                        final annotated = await Navigator.push<File>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MarkupViewerScreen.file(
+                              file: File(original.path),
+                            ),
+                          ),
+                        );
+                        if (annotated != null) {
+                          setState(() {
+                            _mediaFiles[index] = XFile(annotated.path);
+                          });
+                        }
+                      },
                     ),
                     const SizedBox(height: 28),
 
@@ -674,12 +699,14 @@ class _MediaGrid extends StatelessWidget {
     required this.maxFiles,
     required this.onAdd,
     required this.onRemove,
+    required this.onMarkup,
   });
 
   final List<XFile> files;
   final int maxFiles;
   final VoidCallback onAdd;
   final void Function(int index) onRemove;
+  final Future<void> Function(int index, XFile file) onMarkup;
 
   bool _isVideo(XFile f) {
     final p = f.path.toLowerCase();
@@ -714,6 +741,7 @@ class _MediaGrid extends StatelessWidget {
           file: f,
           isVideo: _isVideo(f),
           onRemove: () => onRemove(i),
+          onMarkup: _isVideo(f) ? null : () => onMarkup(i, f),
         );
       },
     );
@@ -764,11 +792,13 @@ class _MediaCell extends StatelessWidget {
     required this.file,
     required this.isVideo,
     required this.onRemove,
+    this.onMarkup,
   });
 
   final XFile file;
   final bool isVideo;
   final VoidCallback onRemove;
+  final VoidCallback? onMarkup;
 
   @override
   Widget build(BuildContext context) {
@@ -832,6 +862,25 @@ class _MediaCell extends StatelessWidget {
             ),
           ),
         ),
+
+        // Markup button (photos only)
+        if (onMarkup != null)
+          Positioned(
+            bottom: 4,
+            left: 4,
+            child: GestureDetector(
+              onTap: onMarkup,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.edit_outlined,
+                    color: Colors.white, size: 12),
+              ),
+            ),
+          ),
       ],
     );
   }

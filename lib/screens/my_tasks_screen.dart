@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_enums.dart';
@@ -7,6 +10,7 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
 import '../widgets/ppqa_dropdown.dart';
+import 'markup_viewer_screen.dart';
 import 'snag_detail_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
@@ -92,6 +96,7 @@ class _MyTasksScreenState extends State<MyTasksScreen>
     final locationNames = appState.locations.map((l) => l.name).toList();
     final floors = _floorsFor(appState);
 
+    final serialMap = appState.snagSerialMap;
     final mySnags = _applyFilters(appState.getMySnags(myName));
     final teamSnags = _applyFilters(appState.getTeamSnags(myName));
     final myTotal = appState.getMySnags(myName).length;
@@ -254,10 +259,14 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                 _MySnagsList(
                   snags: mySnags,
                   total: myTotal,
+                  serialMap: serialMap,
                   canChangeStatus: canChangeOwn,
                   onTap: (snag) => Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (_) => SnagDetailScreen(snag: snag)),
+                        builder: (_) => SnagDetailScreen(
+                              snag: snag,
+                              serialNumber: serialMap[snag.id],
+                            )),
                   ),
                   onChangeStatus: (snag) => _showStatusSheet(context, snag),
                 ),
@@ -266,11 +275,15 @@ class _MyTasksScreenState extends State<MyTasksScreen>
                 _TeamSnagsList(
                   snags: teamSnags,
                   total: teamTotal,
+                  serialMap: serialMap,
                   resolveInspector: appState.resolveInspector,
                   canChangeStatus: canChangeAny,
                   onTap: (snag) => Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (_) => SnagDetailScreen(snag: snag)),
+                        builder: (_) => SnagDetailScreen(
+                              snag: snag,
+                              serialNumber: serialMap[snag.id],
+                            )),
                   ),
                   onChangeStatus: (snag) => _showStatusSheet(context, snag),
                 ),
@@ -289,6 +302,7 @@ class _MySnagsList extends StatelessWidget {
   const _MySnagsList({
     required this.snags,
     required this.total,
+    required this.serialMap,
     required this.canChangeStatus,
     required this.onTap,
     required this.onChangeStatus,
@@ -296,6 +310,7 @@ class _MySnagsList extends StatelessWidget {
 
   final List<SnagModel> snags;
   final int total;
+  final Map<String, int> serialMap;
   final bool canChangeStatus;
   final void Function(SnagModel) onTap;
   final void Function(SnagModel) onChangeStatus;
@@ -319,6 +334,7 @@ class _MySnagsList extends StatelessWidget {
         final snag = snags[i];
         return _TaskCard(
           snag: snag,
+          serialNumber: serialMap[snag.id],
           showInspector: false,
           canChangeStatus: canChangeStatus,
           onTap: () => onTap(snag),
@@ -335,6 +351,7 @@ class _TeamSnagsList extends StatelessWidget {
   const _TeamSnagsList({
     required this.snags,
     required this.total,
+    required this.serialMap,
     required this.resolveInspector,
     required this.canChangeStatus,
     required this.onTap,
@@ -343,6 +360,7 @@ class _TeamSnagsList extends StatelessWidget {
 
   final List<SnagModel> snags;
   final int total;
+  final Map<String, int> serialMap;
   final String Function(String) resolveInspector;
   final bool canChangeStatus;
   final void Function(SnagModel) onTap;
@@ -390,6 +408,7 @@ class _TeamSnagsList extends StatelessWidget {
         final snag = (item as _SnagItem).snag;
         return _TaskCard(
           snag: snag,
+          serialNumber: serialMap[snag.id],
           showInspector: false, // name already shown in group header
           canChangeStatus: canChangeStatus,
           onTap: () => onTap(snag),
@@ -473,6 +492,7 @@ class _InspectorHeader extends StatelessWidget {
 class _TaskCard extends StatelessWidget {
   const _TaskCard({
     required this.snag,
+    this.serialNumber,
     required this.showInspector,
     required this.canChangeStatus,
     required this.onTap,
@@ -480,6 +500,7 @@ class _TaskCard extends StatelessWidget {
   });
 
   final SnagModel snag;
+  final int? serialNumber;
   final bool showInspector;
   final bool canChangeStatus;
   final VoidCallback onTap;
@@ -501,6 +522,31 @@ class _TaskCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Serial badge
+                  if (serialNumber != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      margin: const EdgeInsets.only(right: 6, top: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A3A5C).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color:
+                              const Color(0xFF1A3A5C).withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        '#$serialNumber',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1A3A5C),
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                  ],
                   Expanded(
                     child: Text(
                       snag.defectDescription,
@@ -605,9 +651,33 @@ class _StatusSheetState extends State<_StatusSheet> {
       Navigator.pop(context);
       return;
     }
+    // Closing requires a mandatory close note / evidence
+    if (newStatus == SnagStatus.closed) {
+      final result = await showDialog<_CloseNoteResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const _CloseNoteDialog(),
+      );
+      if (result == null) return; // user cancelled
+      await _doSave(newStatus, closeNote: result.note, closeMediaFiles: result.files);
+    } else {
+      await _doSave(newStatus);
+    }
+  }
+
+  Future<void> _doSave(
+    SnagStatus newStatus, {
+    String? closeNote,
+    List<File> closeMediaFiles = const [],
+  }) async {
     setState(() => _saving = true);
     try {
-      await context.read<AppState>().updateSnagStatus(widget.snag.id, newStatus);
+      await context.read<AppState>().updateSnagStatus(
+        widget.snag.id,
+        newStatus,
+        closeNote: closeNote,
+        closeMediaFiles: closeMediaFiles,
+      );
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -719,6 +789,223 @@ class _StatusOption extends StatelessWidget {
           ? Icon(Icons.check_circle, color: status.color, size: 20)
           : null,
       onTap: onTap,
+    );
+  }
+}
+
+// ── Close note result ─────────────────────────────────────────────────────────
+
+class _CloseNoteResult {
+  final String note;
+  final List<File> files;
+  const _CloseNoteResult({required this.note, required this.files});
+}
+
+// ── Close note dialog ─────────────────────────────────────────────────────────
+
+class _CloseNoteDialog extends StatefulWidget {
+  const _CloseNoteDialog();
+
+  @override
+  State<_CloseNoteDialog> createState() => _CloseNoteDialogState();
+}
+
+class _CloseNoteDialogState extends State<_CloseNoteDialog> {
+  final _noteController = TextEditingController();
+  final List<File> _mediaFiles = [];
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  bool get _isValid =>
+      _noteController.text.trim().isNotEmpty || _mediaFiles.isNotEmpty;
+
+  Future<void> _pickFromCamera() async {
+    final f = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1920,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+    if (f != null) setState(() => _mediaFiles.add(File(f.path)));
+  }
+
+  Future<void> _pickFromGallery() async {
+    final picked = await ImagePicker().pickMultiImage(
+      maxWidth: 1920,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+    if (picked.isNotEmpty) {
+      setState(() => _mediaFiles.addAll(picked.map((f) => File(f.path))));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.lock_outline, color: AppTheme.statusClosed),
+          SizedBox(width: 8),
+          Text('Close Snag'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Provide a close note and/or photo evidence before closing this snag.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF6C757D)),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _noteController,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Close Note',
+                hintText: 'Describe how the defect was resolved...',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_mediaFiles.isNotEmpty) ...[
+              SizedBox(
+                height: 80,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _mediaFiles.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final file = _mediaFiles[i];
+                    return Stack(
+                      children: [
+                        GestureDetector(
+                          onTap: () async {
+                            final annotated =
+                                await Navigator.push<File>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    MarkupViewerScreen.file(file: file),
+                              ),
+                            );
+                            if (annotated != null) {
+                              setState(() => _mediaFiles[i] = annotated);
+                            }
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              file,
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 2,
+                          right: 2,
+                          child: GestureDetector(
+                            onTap: () =>
+                                setState(() => _mediaFiles.removeAt(i)),
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close,
+                                  color: Colors.white, size: 12),
+                            ),
+                          ),
+                        ),
+                        // Markup hint
+                        Positioned(
+                          bottom: 2,
+                          left: 2,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: Colors.black45,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Icon(Icons.edit_outlined,
+                                color: Colors.white, size: 10),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                  label: const Text('Camera'),
+                  onPressed: _pickFromCamera,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.secondary,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.photo_library_outlined, size: 16),
+                  label: const Text('Gallery'),
+                  onPressed: _pickFromGallery,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.secondary,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            if (!_isValid)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Please add a close note or at least one photo.',
+                  style: TextStyle(fontSize: 12, color: Colors.red),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isValid
+              ? () => Navigator.pop(
+                    context,
+                    _CloseNoteResult(
+                      note: _noteController.text.trim(),
+                      files: List.of(_mediaFiles),
+                    ),
+                  )
+              : null,
+          child: const Text('Close Snag'),
+        ),
+      ],
     );
   }
 }

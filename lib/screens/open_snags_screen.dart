@@ -74,6 +74,7 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final allSnags = appState.snags;
+    final serialMap = appState.snagSerialMap;
     final filtered = _applyFilters(allSnags.toList());
     final grouped = _group(filtered);
 
@@ -196,7 +197,7 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: _countItems(grouped),
                     itemBuilder: (_, index) =>
-                        _buildItem(context, grouped, index),
+                        _buildItem(context, grouped, index, serialMap),
                   ),
           ),
         ],
@@ -223,6 +224,7 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
     BuildContext context,
     Map<String, Map<String, List<SnagModel>>> grouped,
     int targetIndex,
+    Map<String, int> serialMap,
   ) {
     int i = 0;
     for (final locEntry in grouped.entries) {
@@ -233,13 +235,17 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
         i++;
         for (final snag in floorEntry.value) {
           if (i == targetIndex) {
+            final serial = serialMap[snag.id];
             return GestureDetector(
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => SnagDetailScreen(snag: snag),
+                  builder: (_) => SnagDetailScreen(
+                    snag: snag,
+                    serialNumber: serial,
+                  ),
                 ),
               ),
-              child: SnagListTile(snag: snag),
+              child: SnagListTile(snag: snag, serialNumber: serial),
             );
           }
           i++;

@@ -181,8 +181,9 @@ class AppState extends ChangeNotifier {
         return;
       }
 
-      // Active user: upsert display name + subscribe to data streams
-      _service.saveUserProfile(
+      // Active user: upsert display name FIRST (creates users/{uid} doc so
+      // Firestore security rules can evaluate the profile), then subscribe.
+      await _service.saveUserProfile(
         user.uid,
         user.displayName ?? user.email?.split('@').first ?? 'User',
         user.email ?? '',
@@ -400,10 +401,35 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> updateSnagStatus(String snagId, SnagStatus newStatus) async {
+  Future<void> updateSnagStatus(
+    String snagId,
+    SnagStatus newStatus, {
+    String? closeNote,
+    List<File> closeMediaFiles = const [],
+  }) async {
     final pid = _activeProjectId;
     if (pid == null) return;
-    await _service.updateSnagStatus(snagId, pid, newStatus);
+    await _service.updateSnagStatus(
+      snagId,
+      pid,
+      newStatus,
+      closeNote: closeNote,
+      closeMediaFiles: closeMediaFiles,
+    );
+  }
+
+  // ── Serial number map ──────────────────────────────────────────────────────
+  /// Returns a stable { snagId → serialNumber } map.
+  /// Oldest snag by createdAt = #1, next = #2, etc.
+  /// The serial is project-scoped (based on the currently loaded _snags list).
+  Map<String, int> get snagSerialMap {
+    final sorted = [..._snags]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final map = <String, int>{};
+    for (var i = 0; i < sorted.length; i++) {
+      map[sorted[i].id] = i + 1;
+    }
+    return map;
   }
 
   // ── Computed Stats ─────────────────────────────────────────────────────────

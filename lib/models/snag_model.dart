@@ -27,6 +27,14 @@ class SnagModel {
   final List<String> mediaUrls;
   final String? notes;
 
+  // ── Close-out fields (written when status → closed) ─────────────────────────
+  /// Mandatory note added by the inspector when closing a snag.
+  final String? closeNote;
+
+  /// Photos/videos uploaded as evidence when closing a snag.
+  /// Kept separate from [mediaUrls] so original evidence is preserved.
+  final List<String> closeEvidenceUrls;
+
   const SnagModel({
     required this.id,
     required this.createdBy,
@@ -42,6 +50,8 @@ class SnagModel {
     required this.status,
     this.mediaUrls = const [],
     this.notes,
+    this.closeNote,
+    this.closeEvidenceUrls = const [],
   });
 
   /// Convenience getter — first photo URL (used by list tile preview).
@@ -62,6 +72,8 @@ class SnagModel {
     SnagStatus? status,
     List<String>? mediaUrls,
     String? notes,
+    String? closeNote,
+    List<String>? closeEvidenceUrls,
   }) {
     return SnagModel(
       id: id ?? this.id,
@@ -78,6 +90,8 @@ class SnagModel {
       status: status ?? this.status,
       mediaUrls: mediaUrls ?? this.mediaUrls,
       notes: notes ?? this.notes,
+      closeNote: closeNote ?? this.closeNote,
+      closeEvidenceUrls: closeEvidenceUrls ?? this.closeEvidenceUrls,
     );
   }
 
@@ -105,6 +119,8 @@ class SnagModel {
       'status': status.firestoreValue,
       'mediaUrls': mediaUrls,
       'notes': notes,
+      'closeNote': closeNote,
+      'closeEvidenceUrls': closeEvidenceUrls,
     };
   }
 
@@ -123,6 +139,11 @@ class SnagModel {
       mediaUrls = [];
     }
 
+    // Close-out evidence urls — backwards-compatible (old snags won't have it)
+    final List<String> closeEvidenceUrls = d['closeEvidenceUrls'] is List
+        ? List<String>.from(d['closeEvidenceUrls'] as List)
+        : [];
+
     return SnagModel(
       id: doc.id,
       createdBy: d['createdBy'] as String? ?? '',
@@ -140,6 +161,8 @@ class SnagModel {
       status: SnagStatusExt.fromFirestore(d['status'] as String?),
       mediaUrls: mediaUrls,
       notes: d['notes'] as String?,
+      closeNote: d['closeNote'] as String?,
+      closeEvidenceUrls: closeEvidenceUrls,
     );
   }
 }

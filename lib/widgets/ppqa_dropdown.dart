@@ -70,7 +70,7 @@ class PPQADropdown<T> extends StatelessWidget {
               Flexible(
                 child: Text(
                   labelBuilder(item),
-                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
                 ),
               ),
             ],

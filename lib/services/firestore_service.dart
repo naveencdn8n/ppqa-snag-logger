@@ -141,16 +141,39 @@ class FirestoreService {
 
   // ── Write: update status ───────────────────────────────────────────────────
 
-  /// Updates only the [status] field of an existing snag document.
-  /// All other fields are left untouched.
+  /// Updates the [status] field of an existing snag.
+  /// When [newStatus] is [SnagStatus.closed], also uploads any
+  /// [closeMediaFiles] to Firebase Storage and writes [closeNote] +
+  /// [closeEvidenceUrls] to Firestore. Original [mediaUrls] are preserved.
   Future<void> updateSnagStatus(
     String snagId,
     String projectId,
-    SnagStatus newStatus,
-  ) async {
-    await _snagsRef(projectId)
-        .doc(snagId)
-        .update({'status': newStatus.firestoreValue});
+    SnagStatus newStatus, {
+    String? closeNote,
+    List<File> closeMediaFiles = const [],
+  }) async {
+    final Map<String, dynamic> update = {
+      'status': newStatus.firestoreValue,
+    };
+
+    if (newStatus == SnagStatus.closed) {
+      // Upload close-out evidence in parallel
+      final urls = await Future.wait(
+        closeMediaFiles.asMap().entries.map(
+          (e) => _uploadMedia(
+            e.value,
+            '${snagId}_close',
+            projectId: projectId,
+            index: e.key,
+          ),
+        ),
+      );
+      update['closeNote'] = closeNote ?? '';
+      update['closeEvidenceUrls'] =
+          FieldValue.arrayUnion(urls.whereType<String>().toList());
+    }
+
+    await _snagsRef(projectId).doc(snagId).update(update);
   }
 
   // ── Write: append media URLs (used after offline upload) ──────────────────
