@@ -401,10 +401,21 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> updateSnagStatus(String snagId, SnagStatus newStatus) async {
+  Future<void> updateSnagStatus(
+    String snagId,
+    SnagStatus newStatus, {
+    String? closeNote,
+    List<File> closeMediaFiles = const [],
+  }) async {
     final pid = _activeProjectId;
     if (pid == null) return;
-    await _service.updateSnagStatus(snagId, pid, newStatus);
+    await _service.updateSnagStatus(
+      snagId,
+      pid,
+      newStatus,
+      closeNote: closeNote,
+      closeMediaFiles: closeMediaFiles,
+    );
   }
 
   // ── Serial number map ──────────────────────────────────────────────────────

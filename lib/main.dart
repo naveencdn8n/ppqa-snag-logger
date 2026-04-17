@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
+import 'services/inactivity_service.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
@@ -49,34 +50,160 @@ void main() async {
   );
 }
 
-class PPQAApp extends StatelessWidget {
+class PPQAApp extends StatefulWidget {
   const PPQAApp({super.key});
 
   @override
+  State<PPQAApp> createState() => _PPQAAppState();
+}
+
+class _PPQAAppState extends State<PPQAApp> with WidgetsBindingObserver {
+  // ── Inactivity & lifecycle ────────────────────────────────────────────────
+  late final InactivityService _inactivity;
+
+  /// Reference to AppState stored once in didChangeDependencies so we can
+  /// safely add/remove the listener (and access it in dispose).
+  AppState? _appState;
+
+  /// Whether the user was logged-in the last time we checked.
+  bool _wasLoggedIn = false;
+
+  /// The time the app went into the background (paused state).
+  /// Null while the app is in the foreground.
+  DateTime? _pausedAt;
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _inactivity = InactivityService(onTimeout: _signOutDueToInactivity);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Grab AppState once and subscribe — guards against repeated calls.
+    if (_appState == null) {
+      _appState = context.read<AppState>();
+      _appState!.addListener(_onAuthChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _appState?.removeListener(_onAuthChanged);
+    _inactivity.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // ── Auth-change listener ──────────────────────────────────────────────────
+
+  /// Called whenever AppState notifies — start/stop the timer based on
+  /// whether the user is currently logged in.
+  void _onAuthChanged() {
+    final appState = _appState;
+    if (appState == null || !mounted) return;
+
+    final loggedIn = appState.isLoggedIn;
+    if (loggedIn && !_wasLoggedIn) {
+      // User just logged in — begin the inactivity countdown.
+      _inactivity.resetTimer();
+    } else if (!loggedIn && _wasLoggedIn) {
+      // User just logged out (manually or via auto-logout) — kill the timer.
+      _inactivity.stopTimer();
+    }
+    _wasLoggedIn = loggedIn;
+  }
+
+  // ── Inactivity timeout ────────────────────────────────────────────────────
+
+  void _signOutDueToInactivity() {
+    if (!mounted) return;
+    _appState?.signOut();
+  }
+
+  // ── App lifecycle (background / foreground / close) ───────────────────────
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final appState = _appState;
+    if (appState == null || !mounted) return;
+
+    switch (state) {
+      case AppLifecycleState.paused:
+        // App went to background — pause the inactivity timer and record when.
+        if (appState.isLoggedIn) {
+          _pausedAt = DateTime.now();
+          _inactivity.stopTimer();
+        }
+
+      case AppLifecycleState.resumed:
+        // App came back to the foreground.
+        final paused = _pausedAt;
+        _pausedAt = null;
+
+        if (appState.isLoggedIn) {
+          if (paused != null &&
+              DateTime.now().difference(paused) >= InactivityService.kTimeout) {
+            // User left the app for ≥ 15 minutes — treat as session expired.
+            appState.signOut();
+          } else {
+            // Still within the window — resume the countdown fresh.
+            _inactivity.resetTimer();
+          }
+        }
+
+      case AppLifecycleState.detached:
+        // App process is being torn down — sign out so next launch starts fresh.
+        if (appState.isLoggedIn) {
+          appState.signOut();
+        }
+
+      default:
+        break;
+    }
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'PPQA Snag Logger',
-      theme: AppTheme.lightTheme,
-      debugShowCheckedModeBanner: false,
-      home: Consumer<AppState>(
-        builder: (context, appState, _) {
-          // Auth or role still being resolved — show splash
-          if (appState.authLoading || appState.roleLoading) {
-            return const _SplashScreen();
-          }
-          // Not signed in → login screen
-          if (!appState.isLoggedIn) return const LoginScreen();
-          // Signed in but blocked → blocked screen
-          if (appState.isBlocked) return const _BlockedScreen();
-          // Waiting for project list from Firestore
-          if (appState.projectsLoading) return const _SplashScreen();
-          // No active project: show picker (handles both 0 and multiple projects)
-          if (!appState.hasActiveProject) {
-            return const ProjectSelectorScreen(showBack: false);
-          }
-          // Active project selected → main app
-          return const AppShellScreen();
-        },
+    return Listener(
+      // Reset the inactivity timer on any touch anywhere in the app.
+      // Listener fires on raw pointer events without consuming them,
+      // so all gestures still reach their intended targets normally.
+      onPointerDown: (_) {
+        if (_appState?.isLoggedIn == true) {
+          _inactivity.resetTimer();
+        }
+      },
+      child: MaterialApp(
+        title: 'PPQA Snag Logger',
+        theme: AppTheme.lightTheme,
+        debugShowCheckedModeBanner: false,
+        home: Consumer<AppState>(
+          builder: (context, appState, _) {
+            // Auth or role still being resolved — show splash
+            if (appState.authLoading || appState.roleLoading) {
+              return const _SplashScreen();
+            }
+            // Not signed in → login screen
+            if (!appState.isLoggedIn) return const LoginScreen();
+            // Signed in but blocked → blocked screen
+            if (appState.isBlocked) return const _BlockedScreen();
+            // Waiting for project list from Firestore
+            if (appState.projectsLoading) return const _SplashScreen();
+            // No active project: show picker (handles both 0 and multiple projects)
+            if (!appState.hasActiveProject) {
+              return const ProjectSelectorScreen(showBack: false);
+            }
+            // Active project selected → main app
+            return const AppShellScreen();
+          },
+        ),
       ),
     );
   }

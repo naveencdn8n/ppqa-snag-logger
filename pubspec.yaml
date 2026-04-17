@@ -1,7 +1,7 @@
 name: ppqa_snag_logger
 description: Pre-Possession Quality Audit Snag Logger
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.3+4
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -27,6 +27,8 @@ dependencies:
   # Offline support
   connectivity_plus: ^6.0.0
   path_provider: ^2.1.5
+  # Photo markup
+  image_painter: ^0.7.0
 
 dev_dependencies:
   flutter_test:
@@ -40,10 +42,10 @@ flutter:
     - assets/images/
     - assets/credentials/
 
-flutter_icons:
+flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/images/app_icon.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#1A3A5C"
+  adaptive_icon_background: "#6C3FC8"
   adaptive_icon_foreground: "assets/images/app_icon_foreground.png"
