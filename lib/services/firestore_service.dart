@@ -43,14 +43,13 @@ class FirestoreService {
   }
 
   /// Fetches a user's Firestore profile (role, status, isAdmin, displayName).
-  /// Returns an empty map if the document doesn't exist yet (new user).
+  /// Returns an empty map only when the document genuinely does not exist
+  /// (i.e. a brand-new user who has not yet been assigned a profile).
+  /// Network / permission errors are re-thrown so the caller (AppState) can
+  /// handle them and avoid defaulting a blocked user to an active role.
   Future<Map<String, dynamic>> getUserProfileData(String uid) async {
-    try {
-      final snap = await _usersRef.doc(uid).get();
-      return snap.exists ? (snap.data() ?? {}) : {};
-    } catch (_) {
-      return {};
-    }
+    final snap = await _usersRef.doc(uid).get();
+    return snap.exists ? (snap.data() ?? {}) : {};
   }
 
   /// Real-time stream of uid → displayName for all team members.

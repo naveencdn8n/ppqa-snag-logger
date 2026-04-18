@@ -710,7 +710,15 @@ class _MediaSection extends StatelessWidget {
               itemCount: urls.length,
               itemBuilder: (context, i) {
                 final url = urls[i];
-                final isVideo = url.endsWith('.mp4') || url.contains('video');
+                // Firebase Storage URLs contain query params (?alt=media&token=…)
+                // so we must strip them before checking the file extension.
+                final cleanPath = url.split('?').first.toLowerCase();
+                final isVideo = cleanPath.endsWith('.mp4') ||
+                    cleanPath.endsWith('.mov') ||
+                    cleanPath.endsWith('.avi') ||
+                    cleanPath.endsWith('.webm') ||
+                    url.contains('%2Fvideo') ||
+                    url.contains('/video');
                 return GestureDetector(
                   onTap: isVideo
                       ? null
