@@ -1,101 +1,66 @@
-import 'package:flutter/services.dart';
-import 'package:gsheets/gsheets.dart';
-import 'package:intl/intl.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
-import '../models/app_enums.dart';
 import '../models/snag_model.dart';
 
-/// Exports all snags to a Google Sheet using a service account.
+/// Exports snags to Google Sheets by calling a Firebase Cloud Function.
 ///
-/// Setup required (one-time):
-/// 1. Enable Google Sheets API in GCP Console.
-/// 2. Create a service account → download JSON key →
-///    save as `assets/credentials/sheets_credentials.json`.
-/// 3. Create a Google Sheet and share it with the service account email.
-/// 4. Paste the Spreadsheet ID into [_spreadsheetId] below.
+/// The Cloud Function holds the Google Sheets service account credentials
+/// server-side so the private key is never bundled inside the APK.
+///
+/// ── One-time setup required ──────────────────────────────────────────────────
+/// 1. Deploy the `exportSnagsToSheets` callable Cloud Function (Node.js):
+///    - Install googleapis npm package in your functions project
+///    - Load the service account JSON from an environment secret (not a file)
+///    - Receive `data.snags` (List of row maps), write them to the Sheet
+///    - Return `{ count: <int> }` on success
+///
+/// 2. In Firebase Console → Functions → (your function) → Environment:
+///    Set secret `SHEETS_CREDENTIALS` = contents of your service account JSON
+///    Set secret `SPREADSHEET_ID`     = your Google Sheet ID
+///
+/// See the Cloud Function template at:
+///   https://firebase.google.com/docs/functions/callable
+/// ─────────────────────────────────────────────────────────────────────────────
 class SheetsExportService {
-  // ── Configure these two values after completing the setup steps ────────────
-
-  /// The long alphanumeric ID from your sheet's URL:
-  /// https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
-  static const String _spreadsheetId = '1OTEnNiwq-guFoRmXy1akS-BzbsMOnuA9JWHHJaAAWbk';
-
-  /// The tab name inside the spreadsheet where snags will be written.
-  static const String _worksheetTitle = 'Snags';
-
-  // ── Column headers (A–O) ───────────────────────────────────────────────────
-  static const List<String> _headers = [
-    'ID',
-    'Created By',
-    'Created At',
-    'Location',
-    'Floor No',
-    'Unit',
-    'Room',
-    'Element',
-    'Trade',
-    'Defect Description',
-    'Severity',
-    'Status',
-    'Evidence Image URL',
-    'Notes',
-    'Week Start',
-  ];
-
-  static final _dateFmt = DateFormat('yyyy-MM-dd HH:mm:ss');
+  static const String _functionName = 'exportSnagsToSheets';
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  /// Writes all [snags] to the configured Google Sheet.
+  /// Sends [snags] to the Cloud Function which writes them to Google Sheets.
   ///
-  /// - Creates the worksheet if it does not exist.
-  /// - Writes headers on first run.
-  /// - Clears and rewrites data rows on every subsequent run so the sheet
-  ///   always reflects the current Firestore state.
-  ///
-  /// Returns the number of snag rows written.
-  /// Throws on authentication failure, network error, or missing credentials.
+  /// Returns the number of rows exported.
+  /// Throws [FirebaseFunctionsException] on authentication / network errors,
+  /// or if the Cloud Function has not been deployed yet.
   Future<int> exportSnags(List<SnagModel> snags) async {
-    final credentialsJson = await rootBundle.loadString(
-      'assets/credentials/sheets_credentials.json',
+    final callable = FirebaseFunctions.instance.httpsCallable(
+      _functionName,
+      options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
     );
 
-    final gsheets = GSheets(credentialsJson);
-    final spreadsheet = await gsheets.spreadsheet(_spreadsheetId);
-
-    // Find or create the target worksheet
-    final sheet = spreadsheet.worksheetByTitle(_worksheetTitle) ??
-        await spreadsheet.addWorksheet(_worksheetTitle);
-
-    // Clear the entire sheet and rewrite headers + data fresh each time.
-    // This ensures the Sheet always mirrors the current Firestore state exactly.
-    await sheet.clear();
-    await sheet.values.insertRow(1, _headers);
-
-    if (snags.isEmpty) return 0;
-
-    // Build one row per snag
+    // Serialise each snag into a plain map the Cloud Function can parse.
     final rows = snags
-        .map((s) => [
-              s.id,
-              s.createdBy,
-              _dateFmt.format(s.createdAt),
-              s.location,
-              s.floorNo,
-              s.flatNo,
-              s.room,
-              s.element,
-              s.trade,
-              s.defectDescription,
-              s.severity.label,
-              s.status.label,
-              s.mediaUrls.join(', '), // all media URLs comma-separated
-              s.notes ?? '',
-              _dateFmt.format(s.weekStart),
-            ])
+        .map((s) => {
+              'id': s.id,
+              'createdBy': s.createdBy,
+              'createdAt': s.createdAt.toIso8601String(),
+              'location': s.location,
+              'floorNo': s.floorNo,
+              'flatNo': s.flatNo,
+              'room': s.room,
+              'element': s.element,
+              'trade': s.trade,
+              'defectDescription': s.defectDescription,
+              'severity': s.severity.label,
+              'status': s.status.label,
+              'mediaUrls': s.mediaUrls.join(', '),
+              'notes': s.notes ?? '',
+              'weekStart': s.weekStart.toIso8601String(),
+            })
         .toList();
 
-    await sheet.values.appendRows(rows);
-    return rows.length;
+    final result = await callable.call({'snags': rows});
+
+    // Cloud Function returns { count: <int> }
+    return (result.data['count'] as int?) ?? rows.length;
   }
 }
