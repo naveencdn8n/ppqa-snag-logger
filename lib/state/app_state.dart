@@ -104,6 +104,7 @@ class AppState extends ChangeNotifier {
     _activeProjectId = projectId;
     _cancelDataSubscriptions(keepProjects: true);
     _snags = [];
+    _snagSerialMapCache = null;
     _trades = [];
     _locations = [];
     _configLoading = true;
@@ -115,6 +116,8 @@ class AppState extends ChangeNotifier {
   // ── Snags ──────────────────────────────────────────────────────────────────
   StreamSubscription<List<SnagModel>>? _snagsSubscription;
   List<SnagModel> _snags = [];
+  /// Cached serial map — rebuilt only when [_snags] changes, not on every read.
+  Map<String, int>? _snagSerialMapCache;
   bool _isSyncing = false;
   String? _syncError;
 
@@ -158,6 +161,7 @@ class AppState extends ChangeNotifier {
         _projectsLoading = true;
         _cancelDataSubscriptions();
         _snags = [];
+        _snagSerialMapCache = null;
         _trades = [];
         _locations = [];
         _userProfiles = {};
@@ -280,6 +284,7 @@ class AppState extends ChangeNotifier {
         _activeProjectId = null;
         _cancelDataSubscriptions(keepProjects: true);
         _snags = [];
+        _snagSerialMapCache = null;
         _trades = [];
         _locations = [];
       }
@@ -301,6 +306,7 @@ class AppState extends ChangeNotifier {
     _snagsSubscription = _service.snagsStream(pid).listen(
       (snagList) {
         _snags = snagList;
+        _snagSerialMapCache = null;
         notifyListeners();
       },
       onError: (e) {
@@ -419,10 +425,13 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Serial number map ──────────────────────────────────────────────────────
-  /// Returns a stable { snagId → serialNumber } map.
-  /// Oldest snag by createdAt = #1, next = #2, etc.
-  /// The serial is project-scoped (based on the currently loaded _snags list).
-  Map<String, int> get snagSerialMap {
+  /// Stable { snagId → serialNumber } map. Oldest snag = #1, next = #2, etc.
+  /// Result is cached and only rebuilt when [_snags] changes — never on every
+  /// widget build, so the O(n log n) sort runs at most once per Firestore update.
+  Map<String, int> get snagSerialMap =>
+      _snagSerialMapCache ??= _buildSnagSerialMap();
+
+  Map<String, int> _buildSnagSerialMap() {
     final sorted = [..._snags]
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final map = <String, int>{};
@@ -475,22 +484,20 @@ class AppState extends ChangeNotifier {
   List<SnagModel> getSnagsByUnit(String unit) =>
       _snags.where((s) => s.flatNo == unit).toList();
 
-  /// Returns snags logged by the current user.
-  List<SnagModel> getMySnags(String myName) {
+  /// Returns snags logged by the current user, matched by UID only.
+  /// Using UID (not display name) ensures correctness even when two users
+  /// share the same name or a user renames their account.
+  List<SnagModel> getMySnags() {
     final myUid = _currentUser?.id ?? '';
-    return _snags
-        .where((s) => s.createdBy == myName || s.createdBy == myUid)
-        .toList();
+    if (myUid.isEmpty) return [];
+    return _snags.where((s) => s.createdBy == myUid).toList();
   }
 
-  /// Returns snags logged by other team members.
-  List<SnagModel> getTeamSnags(String myName) {
+  /// Returns snags logged by other team members (everyone except current user).
+  List<SnagModel> getTeamSnags() {
     final myUid = _currentUser?.id ?? '';
     return _snags
-        .where((s) =>
-            s.createdBy != myName &&
-            s.createdBy != myUid &&
-            s.createdBy.isNotEmpty)
+        .where((s) => s.createdBy != myUid && s.createdBy.isNotEmpty)
         .toList();
   }
 
