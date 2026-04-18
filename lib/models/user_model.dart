@@ -2,9 +2,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 /// Valid roles stored in Firestore `users/{uid}.role`
 class UserRoles {
-  static const inspector = 'inspector';
-  static const supervisor = 'supervisor';
-  static const viewer = 'viewer';
+  static const inspector      = 'inspector';
+  static const supervisor     = 'supervisor';
+  static const projectManager = 'projectManager';
+  static const globalAdmin    = 'globalAdmin';
+  static const viewer         = 'viewer';
 }
 
 /// Valid statuses stored in Firestore `users/{uid}.status`
@@ -46,7 +48,9 @@ class UserModel {
       id: user.uid,
       username: user.displayName ?? user.email?.split('@').first ?? 'User',
       email: user.email ?? '',
-      role: (profileData?['role'] as String?) ?? UserRoles.inspector,
+      // Default to 'viewer' so a new user with no invitation profile
+      // gets read-only access rather than accidental write access.
+      role: (profileData?['role'] as String?) ?? UserRoles.viewer,
       status: (profileData?['status'] as String?) ?? UserStatuses.active,
       photoUrl: user.photoURL,
       isAdmin: (profileData?['isAdmin'] as bool?) ?? false,
@@ -54,20 +58,26 @@ class UserModel {
   }
 
   // ── Role checks ──────────────────────────────────────────────────────────────
-  bool get isInspector => role == UserRoles.inspector;
-  bool get isSupervisor => role == UserRoles.supervisor;
-  bool get isViewer => role == UserRoles.viewer;
-  bool get isBlocked => status == UserStatuses.blocked;
+  bool get isInspector      => role == UserRoles.inspector;
+  bool get isSupervisor     => role == UserRoles.supervisor;
+  bool get isProjectManager => role == UserRoles.projectManager;
+  bool get isGlobalAdmin    => role == UserRoles.globalAdmin || isAdmin;
+  bool get isViewer         => role == UserRoles.viewer;
+  bool get isBlocked        => status == UserStatuses.blocked;
 
   // ── Permission checks ────────────────────────────────────────────────────────
   /// Can create new snags and capture evidence.
-  bool get canLogSnags => !isViewer && !isBlocked;
+  bool get canLogSnags =>
+      !isViewer && !isBlocked;
 
   /// Can change status on ANY snag (not just own).
-  bool get canChangeAnyStatus => isSupervisor && !isBlocked;
+  bool get canChangeAnyStatus =>
+      (isSupervisor || isProjectManager || isGlobalAdmin) && !isBlocked;
 
   /// Can change status on their own snags.
-  bool get canChangeOwnStatus => (isInspector || isSupervisor) && !isBlocked;
+  bool get canChangeOwnStatus =>
+      (isInspector || isSupervisor || isProjectManager || isGlobalAdmin) &&
+      !isBlocked;
 
   /// Read-only access — cannot log or change anything.
   bool get isViewOnly => isViewer || isBlocked;
@@ -75,12 +85,11 @@ class UserModel {
   // ── Display helpers ──────────────────────────────────────────────────────────
   String get roleLabel {
     switch (role) {
-      case UserRoles.supervisor:
-        return 'Supervisor';
-      case UserRoles.viewer:
-        return 'Viewer';
-      default:
-        return 'Inspector';
+      case UserRoles.supervisor:     return 'Supervisor';
+      case UserRoles.projectManager: return 'Project Manager';
+      case UserRoles.globalAdmin:    return 'Admin';
+      case UserRoles.viewer:         return 'Viewer';
+      default:                       return 'Inspector';
     }
   }
 

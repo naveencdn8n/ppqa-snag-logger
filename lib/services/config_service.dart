@@ -27,26 +27,28 @@ class ConfigService {
         .asyncMap((snap) => _buildTradesTree(snap, projectId));
   }
 
+  /// Fetches the full Trade→Element→Defect tree in parallel using Future.wait,
+  /// replacing the original sequential nested-await approach which issued
+  /// reads one at a time (O(trades × elements) round trips).
   Future<List<TradeItem>> _buildTradesTree(
     QuerySnapshot tradesSnap,
     String projectId,
   ) async {
-    final result = <TradeItem>[];
     final tradesBase = _db
         .collection('projects')
         .doc(projectId)
         .collection('trades');
 
-    for (final tradeDoc in tradesSnap.docs) {
+    // One Future per trade — all element fetches run in parallel.
+    final tradeFutures = tradesSnap.docs.map((tradeDoc) async {
       final elementsSnap = await tradesBase
           .doc(tradeDoc.id)
           .collection('elements')
           .orderBy('name')
           .get();
 
-      final elements = <ElementItem>[];
-
-      for (final elemDoc in elementsSnap.docs) {
+      // One Future per element — all defect fetches run in parallel.
+      final elementFutures = elementsSnap.docs.map((elemDoc) async {
         final defectsSnap = await tradesBase
             .doc(tradeDoc.id)
             .collection('elements')
@@ -55,23 +57,23 @@ class ConfigService {
             .orderBy('name')
             .get();
 
-        elements.add(ElementItem(
+        return ElementItem(
           id: elemDoc.id,
           name: elemDoc['name'] as String,
           defects: defectsSnap.docs
               .map((d) => DefectItem(id: d.id, name: d['name'] as String))
               .toList(),
-        ));
-      }
+        );
+      });
 
-      result.add(TradeItem(
+      return TradeItem(
         id: tradeDoc.id,
         name: tradeDoc['name'] as String,
-        elements: elements,
-      ));
-    }
+        elements: await Future.wait(elementFutures),
+      );
+    });
 
-    return result;
+    return Future.wait(tradeFutures);
   }
 
   // ── Locations ────────────────────────────────────────────────────────────────
