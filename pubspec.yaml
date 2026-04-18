@@ -22,8 +22,8 @@ dependencies:
   firebase_crashlytics: ^4.3.3
   # Google Sign-In
   google_sign_in: ^6.2.2
-  # Google Sheets export
-  gsheets: ^0.5.0
+  # Google Sheets export (via Cloud Function — credentials stay server-side)
+  cloud_functions: ^5.3.0
   # Offline support
   connectivity_plus: ^6.0.0
   path_provider: ^2.1.5
@@ -40,7 +40,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
-    - assets/credentials/
 
 flutter_launcher_icons:
   android: true
