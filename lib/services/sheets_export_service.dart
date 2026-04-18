@@ -1,5 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
+import '../models/app_enums.dart';
 import '../models/snag_model.dart';
 
 /// Exports snags to Google Sheets by calling a Firebase Cloud Function.
