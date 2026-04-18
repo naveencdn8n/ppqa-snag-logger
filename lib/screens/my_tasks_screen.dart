@@ -92,15 +92,14 @@ class _MyTasksScreenState extends State<MyTasksScreen>
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final myName = appState.currentUser?.username ?? '';
     final locationNames = appState.locations.map((l) => l.name).toList();
     final floors = _floorsFor(appState);
 
-    final serialMap = appState.snagSerialMap;
-    final mySnags = _applyFilters(appState.getMySnags(myName));
-    final teamSnags = _applyFilters(appState.getTeamSnags(myName));
-    final myTotal = appState.getMySnags(myName).length;
-    final teamTotal = appState.getTeamSnags(myName).length;
+    final serialMap  = appState.snagSerialMap;
+    final mySnags    = _applyFilters(appState.getMySnags());
+    final teamSnags  = _applyFilters(appState.getTeamSnags());
+    final myTotal    = appState.getMySnags().length;
+    final teamTotal  = appState.getTeamSnags().length;
 
     // Role-based permission flags
     final canChangeOwn = appState.canChangeOwnStatus;   // inspector + supervisor
