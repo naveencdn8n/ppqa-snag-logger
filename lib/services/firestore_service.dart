@@ -203,33 +203,31 @@ class FirestoreService {
 
   /// Uploads a photo or video file to Firebase Storage.
   /// Path: `evidence/{projectId}/{snagId}_{index}.{ext}`
-  /// Returns the download URL or null on failure (non-fatal).
+  /// Returns the download URL. Throws on failure so the caller can surface
+  /// the error to the user — silent failures hide real problems (e.g.
+  /// missing profile / wrong role / Storage rules denying writes).
   Future<String?> _uploadMedia(
     File file,
     String snagId, {
     required String projectId,
     required int index,
   }) async {
-    try {
-      final path = file.path.toLowerCase();
-      final isVideo = path.endsWith('.mp4') ||
-          path.endsWith('.mov') ||
-          path.endsWith('.avi') ||
-          path.endsWith('.mkv');
+    final path = file.path.toLowerCase();
+    final isVideo = path.endsWith('.mp4') ||
+        path.endsWith('.mov') ||
+        path.endsWith('.avi') ||
+        path.endsWith('.mkv');
 
-      final ext = isVideo ? 'mp4' : 'jpg';
-      final contentType = isVideo ? 'video/mp4' : 'image/jpeg';
+    final ext = isVideo ? 'mp4' : 'jpg';
+    final contentType = isVideo ? 'video/mp4' : 'image/jpeg';
 
-      final ref = _storage
-          .ref()
-          .child('evidence/$projectId/${snagId}_$index.$ext');
-      final task = await ref.putFile(
-        file,
-        SettableMetadata(contentType: contentType),
-      );
-      return await task.ref.getDownloadURL();
-    } catch (_) {
-      return null; // non-fatal — snag is saved without this file
-    }
+    final ref = _storage
+        .ref()
+        .child('evidence/$projectId/${snagId}_$index.$ext');
+    final task = await ref.putFile(
+      file,
+      SettableMetadata(contentType: contentType),
+    );
+    return await task.ref.getDownloadURL();
   }
 }

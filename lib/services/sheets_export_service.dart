@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/app_enums.dart';
 import '../models/snag_model.dart';
@@ -33,7 +34,19 @@ class SheetsExportService {
   /// Throws [FirebaseFunctionsException] on authentication / network errors,
   /// or if the Cloud Function has not been deployed yet.
   Future<int> exportSnags(List<SnagModel> snags) async {
-    final callable = FirebaseFunctions.instance.httpsCallable(
+    // Ensure Firebase Auth token is present and fresh before calling.
+    // The cloud_functions SDK reads FirebaseAuth.instance.currentUser to attach
+    // the Bearer token — if it is null the function receives request.auth == null
+    // and throws UNAUTHENTICATED even though the user appears logged in.
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('Not signed in. Please sign out and sign back in.');
+    }
+    // Force-refresh the ID token so an expired token doesn't reach the function.
+    await user.getIdToken(true);
+
+    final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+        .httpsCallable(
       _functionName,
       options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
     );
