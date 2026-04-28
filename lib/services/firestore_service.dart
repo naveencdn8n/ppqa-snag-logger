@@ -190,6 +190,70 @@ class FirestoreService {
     );
   }
 
+  // ── Invitation onboarding ─────────────────────────────────────────────────
+
+  /// Checks for a pending invitation at `invitations/{emailLower}` and, if
+  /// found, applies the assigned role + project membership in a single batch.
+  ///
+  /// Called once on every sign-in. Safe to call repeatedly:
+  ///   • No-op when there is no invitation or it is already claimed.
+  ///   • Throws only on unexpected Firestore errors — callers should catch
+  ///     and log so that a missing invitation never blocks the sign-in flow.
+  ///
+  /// Batch operations (all or nothing):
+  ///   1. Update `users/{uid}.role` to the invited role.
+  ///   2. Create `projects/{projectId}/members/{uid}` with the invited role.
+  ///   3. Append uid to `projects/{projectId}.memberUids`.
+  ///   4. Mark the invitation as `claimed`.
+  Future<void> applyPendingInvitation(String uid, String email) async {
+    final emailKey = email.toLowerCase().trim();
+
+    final inviteSnap =
+        await _db.collection('invitations').doc(emailKey).get();
+
+    if (!inviteSnap.exists) return;
+    final invite = inviteSnap.data()!;
+    if (invite['status'] != 'pending') return;
+
+    final role      = (invite['role']      as String?) ?? 'inspector';
+    final projectId = (invite['projectId'] as String?) ?? '';
+
+    final batch = _db.batch();
+
+    // 1. Self-apply role (Firestore rule allows this for pending invitations)
+    batch.update(_usersRef.doc(uid), {'role': role});
+
+    if (projectId.isNotEmpty) {
+      // 2. Create member sub-document
+      batch.set(
+        _db
+            .collection('projects')
+            .doc(projectId)
+            .collection('members')
+            .doc(uid),
+        {
+          'role':     role,
+          'joinedAt': FieldValue.serverTimestamp(),
+        },
+      );
+
+      // 3. Add uid to the denormalised memberUids array
+      batch.update(
+        _db.collection('projects').doc(projectId),
+        {'memberUids': FieldValue.arrayUnion([uid])},
+      );
+    }
+
+    // 4. Mark invitation as claimed so it can only be used once
+    batch.update(inviteSnap.reference, {
+      'status':    'claimed',
+      'claimedBy': uid,
+      'claimedAt': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+  }
+
   // ── Storage: upload media ──────────────────────────────────────────────────
 
   /// Public wrapper used by [OfflineQueueService] to re-upload queued files.

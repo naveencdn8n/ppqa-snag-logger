@@ -169,11 +169,32 @@ class AppState extends ChangeNotifier {
         return;
       }
 
-      // User is signed in — fetch their role/status from Firestore
+      // User is signed in — onboard them and load their profile.
       _authLoading = false;
       _roleLoading = true;
       notifyListeners();
 
+      // Step 1: Upsert display profile. This creates users/{uid} so that
+      // Firestore security rules can evaluate the profile in later calls.
+      await _service.saveUserProfile(
+        user.uid,
+        user.displayName ?? user.email?.split('@').first ?? 'User',
+        user.email ?? '',
+      );
+
+      // Step 2: Claim any pending invitation (sets role + project membership).
+      // Silently ignored when there is no invitation or it is already claimed.
+      // A failure here must never block the sign-in flow.
+      if (user.email != null) {
+        try {
+          await _service.applyPendingInvitation(user.uid, user.email!);
+        } catch (e) {
+          // Non-fatal — user can still sign in; admin can assign roles manually.
+          debugPrint('[AppState] applyPendingInvitation skipped: $e');
+        }
+      }
+
+      // Step 3: Fetch fresh profile (role may have just been applied above).
       final profileData = await _service.getUserProfileData(user.uid);
       _currentUser = UserModel.fromFirebaseUser(user, profileData: profileData);
       _roleLoading = false;
@@ -185,13 +206,6 @@ class AppState extends ChangeNotifier {
         return;
       }
 
-      // Active user: upsert display name FIRST (creates users/{uid} doc so
-      // Firestore security rules can evaluate the profile), then subscribe.
-      await _service.saveUserProfile(
-        user.uid,
-        user.displayName ?? user.email?.split('@').first ?? 'User',
-        user.email ?? '',
-      );
       _subscribeToProjects(user.uid);
       _subscribeToUsers();
       notifyListeners();
