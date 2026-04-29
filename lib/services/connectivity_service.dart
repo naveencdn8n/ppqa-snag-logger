@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -17,20 +18,32 @@ class ConnectivityService {
 
   /// Fast interface-level check — returns true if ANY network interface is up.
   /// Used by the connectivity stream listener (must be fast / non-blocking).
+  ///
+  /// Hard-capped at 1 second — on some Android devices `checkConnectivity()`
+  /// itself can hang briefly during airplane-mode transitions. If it hangs
+  /// we treat the device as offline (safer default).
   Future<bool> get isOnline async {
-    final results = await _connectivity.checkConnectivity();
-    return results.any((r) => r != ConnectivityResult.none);
+    try {
+      final results = await _connectivity
+          .checkConnectivity()
+          .timeout(const Duration(seconds: 1));
+      return results.any((r) => r != ConnectivityResult.none);
+    } on TimeoutException {
+      return false;
+    }
   }
 
   /// Deep internet check — verifies actual internet access by opening a TCP
   /// connection to Google's public DNS (8.8.8.8:53, hardcoded IP so no DNS
-  /// resolution is needed). Times out in 3 seconds.
+  /// resolution is needed).
   ///
+  /// Hard-capped at 4 seconds total (1 s interface check + 3 s socket probe).
   /// Use this before attempting Storage uploads so the app doesn't hang on a
   /// network that has a physical interface but no route to the internet
   /// (e.g. mobile data off while WiFi is connected to a local-only router).
   Future<bool> isReallyOnline() async {
-    // Quick interface check first — if no interface, skip the probe
+    // Quick interface check first — if no interface, skip the probe.
+    // isOnline is itself capped at 1 s so this is bounded.
     if (!await isOnline) return false;
 
     try {

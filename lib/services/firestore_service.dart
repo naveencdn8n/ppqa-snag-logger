@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/app_enums.dart';
 import '../models/snag_model.dart';
@@ -130,11 +132,28 @@ class FirestoreService {
   /// Used when the device is offline — Firestore's offline cache queues the
   /// write and syncs automatically once connectivity is restored.
   ///
-  /// Returns the generated document ID so it can be used in the media queue.
+  /// **Hard 3-second timeout** on the underlying [DocumentReference.set]:
+  /// the document ID is generated locally and is always returned immediately,
+  /// but the Future returned by `set()` can still hang in some SDK states
+  /// (e.g. partial connection drop). Once timed out we fire-and-forget the
+  /// write — Firestore's internal retry queue will complete it in the
+  /// background as soon as network is available.
   Future<String> addSnagOffline(SnagModel snag, String projectId) async {
     final docRef = _snagsRef(projectId).doc();
     final finalSnag = snag.copyWith(id: docRef.id, mediaUrls: const []);
-    await docRef.set(finalSnag.toMap());
+
+    try {
+      await docRef
+          .set(finalSnag.toMap())
+          .timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      // Future didn't resolve in 3 s. The set() call itself has been
+      // accepted by Firestore — it will be retried/synced in the background.
+      // Continue without awaiting so the UI is never blocked.
+      debugPrint(
+          'addSnagOffline: docRef.set() timed out after 3 s, continuing');
+    }
+
     return docRef.id;
   }
 
@@ -298,11 +317,26 @@ class FirestoreService {
   /// Tells the Firestore SDK to stop all network traffic immediately.
   /// After this call, every write (set/update/delete) commits to the local
   /// cache and resolves in < 100 ms instead of waiting for a server ACK.
-  Future<void> goOffline() => _db.disableNetwork();
+  ///
+  /// Wrapped in a 2-second timeout because [FirebaseFirestore.disableNetwork]
+  /// itself can hang if the SDK is mid-handshake with the backend.
+  Future<void> goOffline() async {
+    try {
+      await _db.disableNetwork().timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      debugPrint('goOffline: disableNetwork() timed out, continuing');
+    }
+  }
 
   /// Re-enables Firestore networking. Pending local writes are synced to the
   /// server as soon as the connection is available.
-  Future<void> goOnline() => _db.enableNetwork();
+  Future<void> goOnline() async {
+    try {
+      await _db.enableNetwork().timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      debugPrint('goOnline: enableNetwork() timed out, continuing');
+    }
+  }
 
   /// Uploads a photo or video file to Firebase Storage.
   /// Path: `evidence/{projectId}/{snagId}_{index}.{ext}`

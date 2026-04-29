@@ -419,28 +419,37 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     bool mediaQueued = false;
-
-    // ── Step 1: Check internet BEFORE touching Firestore ──────────────────
-    // This MUST come first. If we call docRef.set() while Firestore still
-    // thinks it's online (it hasn't detected the disconnection yet), it waits
-    // for a server ACK and hangs for 10–30 s. By checking first we can force
-    // Firestore into offline mode so the write commits to local cache in < 100 ms.
-    final hasInternet = await _connectivityService.isReallyOnline();
-
-    if (!hasInternet) {
-      // Tell Firestore to stop all network traffic immediately.
-      // Writes will now hit the local cache and resolve instantly.
-      // goOnline() is called in finally so pending writes sync on reconnect.
-      await _service.goOffline();
-    }
+    bool hasInternet = false;
+    final stopwatch = Stopwatch()..start();
 
     try {
-      // ── Step 2: Save snag text data to Firestore ─────────────────────────
-      // Online  → server write (fast on good connection).
-      // Offline → local cache write (< 100 ms, syncs when back online).
-      final snagId = await _service.addSnagOffline(snag, pid);
+      // ── Step 1: Check internet BEFORE touching Firestore ────────────────
+      // This MUST come first. If we call docRef.set() while Firestore still
+      // thinks it's online, it waits for a server ACK and hangs for 10–30 s.
+      // The check itself is hard-capped at 4 s by isReallyOnline().
+      hasInternet = await _connectivityService.isReallyOnline();
+      debugPrint(
+          'addSnag: internet check = $hasInternet (${stopwatch.elapsedMilliseconds} ms)');
 
-      // ── Step 3: Handle media files ────────────────────────────────────────
+      if (!hasInternet) {
+        // Tell Firestore to stop all network traffic immediately so the
+        // upcoming write commits to the local cache instantly. Hard-capped
+        // at 2 s by goOffline() — if it hangs we continue regardless.
+        await _service.goOffline();
+        debugPrint(
+            'addSnag: goOffline done (${stopwatch.elapsedMilliseconds} ms)');
+      }
+
+      // ── Step 2: Save snag text data to Firestore ───────────────────────
+      // Online  → server write (fast on good connection).
+      // Offline → local cache write (instant once goOffline() has run).
+      // Internal 3-second timeout in addSnagOffline guarantees we never
+      // wait more than 3 s here even on a flaky SDK state.
+      final snagId = await _service.addSnagOffline(snag, pid);
+      debugPrint(
+          'addSnag: snag $snagId saved (${stopwatch.elapsedMilliseconds} ms)');
+
+      // ── Step 3: Handle media files ──────────────────────────────────────
       if (mediaFiles.isNotEmpty) {
         if (hasInternet) {
           // Try to upload all files. Each has a 20 s individual timeout;
@@ -453,7 +462,6 @@ class AppState extends ChangeNotifier {
           final urls = results.whereType<String>().toList();
 
           if (urls.length == mediaFiles.length) {
-            // All photos uploaded — patch the snag with their URLs now.
             await _service.appendMediaUrls(snagId, pid, urls);
           } else {
             // Partial or total failure — queue ALL for retry.
@@ -466,12 +474,16 @@ class AppState extends ChangeNotifier {
           await _offlineQueueService.enqueue(snagId, pid, mediaFiles);
           _pendingUploadCount = await _offlineQueueService.pendingCount;
           mediaQueued = true;
+          debugPrint(
+              'addSnag: media queued (${stopwatch.elapsedMilliseconds} ms)');
         }
       }
 
+      debugPrint('addSnag: DONE in ${stopwatch.elapsedMilliseconds} ms');
       return mediaQueued;
     } catch (e) {
       _syncError = e.toString();
+      debugPrint('addSnag: error after ${stopwatch.elapsedMilliseconds} ms: $e');
       rethrow;
     } finally {
       _isSyncing = false;
