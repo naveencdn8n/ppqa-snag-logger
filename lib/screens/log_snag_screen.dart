@@ -25,6 +25,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
   final _customDefectController = TextEditingController();
   final _notesController = TextEditingController();
   final _roomController = TextEditingController();
+  final _scrollController = ScrollController();
 
   // ── Form state ────────────────────────────────────────────────────────────
   String? _location;
@@ -53,6 +54,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
     _customDefectController.dispose();
     _notesController.dispose();
     _roomController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -226,10 +228,11 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
   }
 
   void _resetForm() {
-    // Clear controllers first, before setState triggers a rebuild
+    // Clear text controllers before setState so they don't flash old values
     _customDefectController.clear();
     _notesController.clear();
     _roomController.clear();
+
     setState(() {
       _location = null;
       _floor = null;
@@ -244,6 +247,18 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
       // Incrementing the version forces all dropdown children to rebuild fresh,
       // clearing their internal FormField state along with the displayed value.
       _formVersion++;
+    });
+
+    // Scroll back to the top so the user sees the blank Location fields,
+    // making it clear the form has been reset and is ready for the next snag.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -348,6 +363,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
           : Form(
               key: _formKey,
               child: SingleChildScrollView(
+                controller: _scrollController,
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   key: ValueKey(_formVersion),
