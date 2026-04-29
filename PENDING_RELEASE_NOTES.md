@@ -30,20 +30,24 @@ Inspectors can now annotate evidence photos before saving:
 
 ### Offline Mode — Snag Submission No Longer Hangs (Fixed)
 Submitting a snag with mobile data off (or on a weak connection) previously
-caused the app to freeze for 30+ seconds before showing an error. The app
-was attempting to upload photos to the cloud before saving anything, so a
-stalled upload blocked the entire submission.
+caused the app to freeze for several minutes before timing out. The fix
+was a multi-layered approach:
 
-The snag text data is now always saved instantly (under 1 second) regardless
-of network state. Photos are then uploaded in the background with a 25-second
-hard timeout. If the upload cannot complete in time — or if there truly is no
-internet — the photos are queued locally and uploaded automatically the next
-time connectivity is available. A clear orange message tells the user:
-*"Snag saved! X photos will upload when back online."*
+- The app now saves the snag text data instantly (typically under 2 seconds)
+  regardless of network state, by detecting offline status before attempting
+  any cloud operation.
+- Real internet detection: the app probes for actual internet access rather
+  than just checking whether a WiFi or mobile network interface is present.
+- Hard timeouts on every network call so nothing can stall the UI for more
+  than a few seconds, even if the underlying Firebase SDK is in an unusual
+  state.
+- Photos are uploaded in the background with a 25-second timeout. If the
+  upload cannot complete — or if there is no internet — the photos are
+  queued locally and uploaded automatically when connectivity is restored.
+- A clear orange message tells the user:
+  *"Snag saved! X photos will upload when back online."*
 
-The app also now properly detects when mobile data is off even if WiFi is
-connected, using a real internet probe (TCP connection) rather than just
-checking whether a network interface exists.
+Tested working with: airplane mode, mobile data off, WiFi without internet.
 
 ### Snag Form Does Not Reset After Submission (Fixed)
 After successfully logging a snag, the form now automatically scrolls back
@@ -76,7 +80,7 @@ refreshes the auth token before calling the export function.
 | # | Change | Type | Status |
 |---|--------|------|--------|
 | 1 | Photo markup toolbar (Pen/Circle/Rect/Arrow/Line/Text/Highlight) | Feature | ✅ Done |
-| 2 | Offline mode hang fix — snag saves instantly, photos queue for later | Bug Fix | ✅ Done |
+| 2 | Offline mode hang fix — snag saves instantly, photos queue for later | Bug Fix | ✅ Done & verified by user |
 | 3 | Form auto-scrolls to top after snag submitted | Bug Fix | ✅ Done |
 | 4 | Evidence upload errors now shown instead of silently swallowed | Bug Fix | ✅ Done |
 | 5 | Sheets export UNAUTHENTICATED error fix | Bug Fix | ✅ Done |
