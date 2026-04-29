@@ -293,6 +293,17 @@ class FirestoreService {
   }) =>
       _uploadMedia(file, snagId, projectId: projectId, index: index);
 
+  // ── Offline network control ────────────────────────────────────────────────
+
+  /// Tells the Firestore SDK to stop all network traffic immediately.
+  /// After this call, every write (set/update/delete) commits to the local
+  /// cache and resolves in < 100 ms instead of waiting for a server ACK.
+  Future<void> goOffline() => _db.disableNetwork();
+
+  /// Re-enables Firestore networking. Pending local writes are synced to the
+  /// server as soon as the connection is available.
+  Future<void> goOnline() => _db.enableNetwork();
+
   /// Uploads a photo or video file to Firebase Storage.
   /// Path: `evidence/{projectId}/{snagId}_{index}.{ext}`
   /// Returns the download URL. Throws on failure so the caller can surface
