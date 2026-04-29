@@ -394,7 +394,22 @@ class AppState extends ChangeNotifier {
 
   List<SnagModel> get snags => List.unmodifiable(_snags);
 
-  Future<void> addSnag(SnagModel snag,
+  /// Saves a snag and its media files.
+  ///
+  /// Returns `true` if photos were queued for later upload (offline / timeout),
+  /// `false` if all photos uploaded immediately (or there were none).
+  ///
+  /// Strategy — save first, upload second:
+  ///   1. The snag text data is ALWAYS written to Firestore instantly via
+  ///      offline persistence (< 100 ms regardless of network state).
+  ///   2. Photo upload is then attempted with a hard 25-second timeout.
+  ///   3. If the upload times out, fails, or there is no internet, ALL photos
+  ///      are queued to the local offline queue and uploaded automatically
+  ///      when connectivity is restored.
+  ///
+  /// This eliminates the previous behaviour where a stalled upload could
+  /// block the entire submission for 30+ seconds on a poor connection.
+  Future<bool> addSnag(SnagModel snag,
       {List<File> mediaFiles = const []}) async {
     final pid = _activeProjectId;
     if (pid == null) throw StateError('No active project selected');
@@ -402,16 +417,52 @@ class AppState extends ChangeNotifier {
     _isSyncing = true;
     _syncError = null;
     notifyListeners();
+
+    bool mediaQueued = false;
+
     try {
-      if (_isOnline) {
-        await _service.addSnag(snag, pid, mediaFiles: mediaFiles);
-      } else {
-        final snagId = await _service.addSnagOffline(snag, pid);
-        if (mediaFiles.isNotEmpty) {
+      // ── Step 1: Save snag data to Firestore immediately ─────────────────
+      // Firestore offline persistence commits the write locally in < 100 ms
+      // and syncs to the server in the background. The snag is always saved.
+      final snagId = await _service.addSnagOffline(snag, pid);
+
+      // ── Step 2: Handle media ─────────────────────────────────────────────
+      if (mediaFiles.isNotEmpty) {
+        // Deep internet probe (3 s max) — avoids hanging on a network that
+        // has a WiFi/mobile interface but no actual route to the internet.
+        final hasInternet = await _connectivityService.isReallyOnline();
+
+        if (hasInternet) {
+          // Try to upload all files (each has a 20 s individual timeout).
+          // Wrap the whole batch in a 25 s hard cap for extra safety.
+          final results = await _service
+              .uploadAllMedia(mediaFiles, snagId, pid)
+              .timeout(const Duration(seconds: 25),
+                  onTimeout: () => List.filled(mediaFiles.length, null));
+
+          final urls = results.whereType<String>().toList();
+
+          if (urls.length == mediaFiles.length) {
+            // All photos uploaded — patch the snag with their URLs now.
+            await _service.appendMediaUrls(snagId, pid, urls);
+          } else {
+            // Partial or total failure — queue ALL files for retry so the
+            // snag is never left in a partially-patched state.
+            // Re-uploading already-uploaded files is safe: same Storage path
+            // overwrites cleanly, and arrayUnion deduplicates the URL list.
+            await _offlineQueueService.enqueue(snagId, pid, mediaFiles);
+            _pendingUploadCount = await _offlineQueueService.pendingCount;
+            mediaQueued = true;
+          }
+        } else {
+          // No internet — queue immediately without attempting any upload.
           await _offlineQueueService.enqueue(snagId, pid, mediaFiles);
           _pendingUploadCount = await _offlineQueueService.pendingCount;
+          mediaQueued = true;
         }
       }
+
+      return mediaQueued;
     } catch (e) {
       _syncError = e.toString();
       rethrow;

@@ -193,22 +193,31 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
     );
 
     try {
-      await state.addSnag(
+      final mediaQueued = await state.addSnag(
         snag,
         mediaFiles: _mediaFiles.map((f) => File(f.path)).toList(),
       );
 
       if (!mounted) return;
+
+      final int fileCount = _mediaFiles.length;
+      final String message;
+      if (fileCount == 0) {
+        message = 'Snag logged successfully!';
+      } else if (mediaQueued) {
+        message = 'Snag saved! '
+            '$fileCount photo${fileCount == 1 ? '' : 's'} will upload when back online.';
+      } else {
+        message = 'Snag logged with $fileCount file${fileCount == 1 ? '' : 's'}!';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _mediaFiles.isEmpty
-                ? 'Snag logged successfully!'
-                : 'Snag logged with ${_mediaFiles.length} file${_mediaFiles.length == 1 ? '' : 's'}!',
-          ),
-          backgroundColor: AppTheme.statusClosed,
+          content: Text(message),
+          backgroundColor:
+              mediaQueued ? Colors.orange.shade700 : AppTheme.statusClosed,
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 4),
         ),
       );
       _resetForm();

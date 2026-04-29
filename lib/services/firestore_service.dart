@@ -256,6 +256,34 @@ class FirestoreService {
 
   // ── Storage: upload media ──────────────────────────────────────────────────
 
+  /// Attempts to upload all [mediaFiles] in parallel.
+  /// Each individual file has a 20-second timeout so a stalled connection
+  /// can't block the UI indefinitely.
+  ///
+  /// Returns a list with one entry per input file:
+  ///   - non-null String → download URL (upload succeeded)
+  ///   - null            → that file failed or timed out
+  Future<List<String?>> uploadAllMedia(
+    List<File> mediaFiles,
+    String snagId,
+    String projectId,
+  ) {
+    return Future.wait(
+      mediaFiles.asMap().entries.map((e) async {
+        try {
+          return await _uploadMedia(
+            e.value,
+            snagId,
+            projectId: projectId,
+            index: e.key,
+          ).timeout(const Duration(seconds: 20));
+        } catch (_) {
+          return null; // timeout or error — caller decides what to queue
+        }
+      }),
+    );
+  }
+
   /// Public wrapper used by [OfflineQueueService] to re-upload queued files.
   Future<String?> uploadMediaFile(
     File file,
