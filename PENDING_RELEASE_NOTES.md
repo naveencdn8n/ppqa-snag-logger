@@ -28,6 +28,23 @@ Inspectors can now annotate evidence photos before saving:
 
 ## 🐛 Bug Fixes
 
+### Offline Mode — Snag Submission No Longer Hangs (Fixed)
+Submitting a snag with mobile data off (or on a weak connection) previously
+caused the app to freeze for 30+ seconds before showing an error. The app
+was attempting to upload photos to the cloud before saving anything, so a
+stalled upload blocked the entire submission.
+
+The snag text data is now always saved instantly (under 1 second) regardless
+of network state. Photos are then uploaded in the background with a 25-second
+hard timeout. If the upload cannot complete in time — or if there truly is no
+internet — the photos are queued locally and uploaded automatically the next
+time connectivity is available. A clear orange message tells the user:
+*"Snag saved! X photos will upload when back online."*
+
+The app also now properly detects when mobile data is off even if WiFi is
+connected, using a real internet probe (TCP connection) rather than just
+checking whether a network interface exists.
+
 ### Snag Form Does Not Reset After Submission (Fixed)
 After successfully logging a snag, the form now automatically scrolls back
 to the top and shows blank fields, making it clear the form is ready for
@@ -59,9 +76,10 @@ refreshes the auth token before calling the export function.
 | # | Change | Type | Status |
 |---|--------|------|--------|
 | 1 | Photo markup toolbar (Pen/Circle/Rect/Arrow/Line/Text/Highlight) | Feature | ✅ Done |
-| 2 | Form auto-scrolls to top after snag submitted | Bug Fix | ✅ Done |
-| 3 | Evidence upload errors now shown instead of silently swallowed | Bug Fix | ✅ Done |
-| 4 | Sheets export UNAUTHENTICATED error fix | Bug Fix | ✅ Done |
+| 2 | Offline mode hang fix — snag saves instantly, photos queue for later | Bug Fix | ✅ Done |
+| 3 | Form auto-scrolls to top after snag submitted | Bug Fix | ✅ Done |
+| 4 | Evidence upload errors now shown instead of silently swallowed | Bug Fix | ✅ Done |
+| 5 | Sheets export UNAUTHENTICATED error fix | Bug Fix | ✅ Done |
 | — | *more items will be added as testing feedback comes in* | — | — |
 
 ---
