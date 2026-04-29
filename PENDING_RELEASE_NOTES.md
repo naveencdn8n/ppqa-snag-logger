@@ -93,8 +93,12 @@ What's New in this update:
   text, and a highlight tool before saving. Circle a crack, draw an
   arrow to the defect, or highlight the problem area.
 
-• Form now resets automatically after each snag is logged, scrolling
-  back to the top so you're ready for the next entry immediately.
+• Works Offline — Snags are now saved instantly even with no internet.
+  Photos queue automatically and upload when you're back online.
+  No more freezing or errors when submitting in low-connectivity areas.
+
+• Form resets automatically after each snag is logged, scrolling back
+  to the top so you're ready for the next entry immediately.
 
 • Improved error messages when photos fail to upload.
 
