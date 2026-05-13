@@ -1,13 +1,12 @@
-# PPQA Snag Logger — Pending Play Store Release Notes
+# PPQA Snag Logger — Release Notes
 
 > This file tracks every change made during the testing phase.
-> When the testing phase is complete, use this to write the
-> "What's New" section in Play Console and bump the final version.
+> Use the "What's New" section below when submitting to Play Console.
 
 ---
 
-## Pending version: TBD (target after testing phase)
-**Last Play Store release:** 1.0.7+8 (26 Apr 2026)
+## ✅ Released version: 1.0.8+9 (04 May 2026)
+**Previous Play Store release:** 1.0.7+8 (26 Apr 2026)
 
 ---
 
@@ -27,6 +26,20 @@ Inspectors can now annotate evidence photos before saving:
 ---
 
 ## 🐛 Bug Fixes
+
+### Change Status Permission Error (Fixed)
+Inspectors were getting a "permission denied" error when trying to change
+the status of their own snags (including when attaching close-out photos).
+
+Root cause: the app was storing the inspector's display name in the snag
+record instead of their unique Firebase user ID. Firestore's security rule
+checks ownership by user ID, so the comparison always failed — even for
+snags the inspector had logged themselves.
+
+Fix: the app now always stores the Firebase user ID as the snag owner.
+Firestore rules also accept the display name as a fallback so that snags
+logged before this fix (with the name stored) remain editable by their
+original inspector.
 
 ### Offline Mode — Snag Submission No Longer Hangs (Fixed)
 Submitting a snag with mobile data off (or on a weak connection) previously
@@ -75,24 +88,22 @@ refreshes the auth token before calling the export function.
 
 ---
 
-## 📋 Changes Being Tracked (Testing Phase — In Progress)
+## 📋 Changes Included in This Release
 
 | # | Change | Type | Status |
 |---|--------|------|--------|
 | 1 | Photo markup toolbar (Pen/Circle/Rect/Arrow/Line/Text/Highlight) | Feature | ✅ Done |
-| 2 | Offline mode hang fix — snag saves instantly, photos queue for later | Bug Fix | ✅ Done & verified by user |
+| 2 | Offline mode hang fix — snag saves instantly, photos queue for later | Bug Fix | ✅ Done & verified |
 | 3 | Form auto-scrolls to top after snag submitted | Bug Fix | ✅ Done |
 | 4 | Evidence upload errors now shown instead of silently swallowed | Bug Fix | ✅ Done |
 | 5 | Sheets export UNAUTHENTICATED error fix | Bug Fix | ✅ Done |
-| — | *more items will be added as testing feedback comes in* | — | — |
+| 6 | Change Status permission-denied fix — inspectors can now update their own snags | Bug Fix | ✅ Done |
 
 ---
 
-## Play Store "What's New" Draft (to be finalised)
+## Play Store "What's New" (ready to paste into Play Console)
 
 ```
-What's New in this update:
-
 • Markup Tools — Annotate evidence photos with pens, circles, arrows,
   text, and a highlight tool before saving. Circle a crack, draw an
   arrow to the defect, or highlight the problem area.
@@ -101,16 +112,17 @@ What's New in this update:
   Photos queue automatically and upload when you're back online.
   No more freezing or errors when submitting in low-connectivity areas.
 
+• Change status fix — inspectors can now update the status of their
+  own snags and attach close-out photos without a permission error.
+
 • Form resets automatically after each snag is logged, scrolling back
   to the top so you're ready for the next entry immediately.
 
 • Improved error messages when photos fail to upload.
 
 • Sheets export reliability improvements.
-
-[Add more items here as testing feedback is implemented]
 ```
 
 ---
 
-*Updated: 2026-04-29 | Maintained by: development team*
+*Updated: 2026-05-04 | Version: 1.0.8+9*

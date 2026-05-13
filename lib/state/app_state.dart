@@ -573,13 +573,21 @@ class AppState extends ChangeNotifier {
   List<SnagModel> getSnagsByUnit(String unit) =>
       _snags.where((s) => s.flatNo == unit).toList();
 
-  /// Returns snags logged by the current user, matched by UID only.
-  /// Using UID (not display name) ensures correctness even when two users
-  /// share the same name or a user renames their account.
+  /// Returns snags logged by the current user.
+  ///
+  /// Primary match is by Firebase UID (the correct, canonical value stored
+  /// since this bug was fixed). A secondary fallback matches by display name
+  /// to surface legacy snags that were accidentally stored with a display name
+  /// instead of a UID before the fix was applied.
   List<SnagModel> getMySnags() {
-    final myUid = _currentUser?.id ?? '';
+    final myUid  = _currentUser?.id       ?? '';
+    final myName = _currentUser?.username ?? '';
     if (myUid.isEmpty) return [];
-    return _snags.where((s) => s.createdBy == myUid).toList();
+    return _snags
+        .where((s) =>
+            s.createdBy == myUid ||
+            (myName.isNotEmpty && s.createdBy == myName))
+        .toList();
   }
 
   /// Returns snags logged by other team members (everyone except current user).

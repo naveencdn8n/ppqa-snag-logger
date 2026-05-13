@@ -176,7 +176,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
 
     final snag = SnagModel(
       id: '',
-      createdBy: state.currentUser?.username ?? 'unknown',
+      createdBy: state.currentUser?.id ?? 'unknown',
       createdAt: DateTime.now(),
       location: _location!,
       floorNo: _floor!,
