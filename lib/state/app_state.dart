@@ -76,6 +76,11 @@ class AppState extends ChangeNotifier {
   bool get canChangeOwnStatus => _currentUser?.canChangeOwnStatus ?? false;
   bool get isViewOnly => _currentUser?.isViewOnly ?? true;
 
+  /// True when the user has the dedicated 'viewer' role. Used to gate the
+  /// "Mark as In Progress" flow which is the *only* write action a viewer
+  /// is allowed to perform on a snag.
+  bool get isViewer => _currentUser?.isViewer ?? false;
+
   /// True when the user is a global admin (web portal + migration screen access).
   bool get isAdmin => _currentUser?.isAdmin ?? false;
 
@@ -510,6 +515,38 @@ class AppState extends ChangeNotifier {
       newStatus,
       closeNote: closeNote,
       closeMediaFiles: closeMediaFiles,
+      // Audit trail — pass the current user's UID so the close is attributed
+      // correctly. Null/empty for the unlikely case of a signed-out session
+      // (which Firestore rules would block anyway).
+      closedBy: _currentUser?.id,
+    );
+  }
+
+  /// Transitions a snag from Open → In Progress with a mandatory note and
+  /// optional photo evidence. This is the entry point used by the viewer
+  /// "Mark as In Progress" flow and (in future) any other role that
+  /// performs the same gated transition.
+  ///
+  /// Authorisation is enforced by Firestore rules — this method does not
+  /// pre-check the user's role. If the rules reject the write, the
+  /// underlying Future throws and the caller surfaces the error to the user.
+  Future<void> markSnagInProgress(
+    String snagId, {
+    required String note,
+    List<File> photos = const [],
+  }) async {
+    final pid = _activeProjectId;
+    if (pid == null) throw StateError('No active project selected');
+    final uid = _currentUser?.id;
+    if (uid == null || uid.isEmpty) {
+      throw StateError('Not signed in');
+    }
+    await _service.markSnagInProgress(
+      snagId,
+      pid,
+      note: note,
+      changedBy: uid,
+      photos: photos,
     );
   }
 

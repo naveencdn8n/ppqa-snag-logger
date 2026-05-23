@@ -59,6 +59,48 @@ class _SnagDetailScreenState extends State<SnagDetailScreen> {
     }
   }
 
+  /// Viewer-only flow: capture a mandatory note + optional photos and
+  /// transition the snag from Open → In Progress. Other roles use the
+  /// existing [_changeStatus] picker which is unchanged by this feature.
+  Future<void> _markInProgressAsViewer() async {
+    final result = await showDialog<_InProgressNoteResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _InProgressNoteDialog(),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() => _savingStatus = true);
+    try {
+      await context.read<AppState>().markSnagInProgress(
+            widget.snag.id,
+            note: result.note,
+            photos: result.files,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Status updated to ${SnagStatus.inProgress.label}'),
+            backgroundColor: SnagStatus.inProgress.color,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingStatus = false);
+    }
+  }
+
   Future<void> _doSave(
     SnagStatus newStatus, {
     String? closeNote,
@@ -108,6 +150,13 @@ class _SnagDetailScreenState extends State<SnagDetailScreen> {
     final inspectorName = appState.resolveInspector(snag.createdBy);
     final canChangeStatus =
         appState.canChangeOwnStatus || appState.canChangeAnyStatus;
+
+    // Viewer-only path: viewers cannot use the general status picker, but
+    // they ARE allowed the single transition Open → In Progress with a
+    // mandatory note + optional photos. Gate the dedicated button on
+    // exactly those conditions.
+    final canMarkInProgressAsViewer =
+        appState.isViewer && snag.status == SnagStatus.open;
 
     final appTitle = widget.serialNumber != null
         ? 'Snag #${widget.serialNumber}'
@@ -239,10 +288,151 @@ class _SnagDetailScreenState extends State<SnagDetailScreen> {
               ),
             ],
 
+            // ── Status-change (In Progress) audit section ─────────────────
+            // Shown whenever a status-change audit trail exists. Independent
+            // of the snag's *current* status — even after a later transition
+            // away from In Progress, the most recent transition's audit is
+            // preserved per spec. Older snags without any audit fields skip
+            // this card entirely.
+            if ((snag.statusChangeNote != null &&
+                    snag.statusChangeNote!.isNotEmpty) ||
+                snag.statusChangePhotos.isNotEmpty ||
+                snag.statusChangedBy != null ||
+                snag.statusChangedAt != null) ...[
+              const SizedBox(height: 12),
+              Card(
+                color: SnagStatus.inProgress.color.withValues(alpha: 0.05),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                      color: SnagStatus.inProgress.color
+                          .withValues(alpha: 0.3)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.play_circle_outline,
+                              size: 16, color: SnagStatus.inProgress.color),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Status Change — In Progress',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: SnagStatus.inProgress.color,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (snag.statusChangedBy != null ||
+                          snag.statusChangedAt != null) ...[
+                        const SizedBox(height: 12),
+                        if (snag.statusChangedBy != null)
+                          _DetailRow(
+                            label: 'Status Changed By',
+                            value: appState
+                                .resolveInspector(snag.statusChangedBy!),
+                          ),
+                        if (snag.statusChangedAt != null) ...[
+                          _DetailRow(
+                            label: 'Status Changed On',
+                            value: DateFormat('dd MMM yyyy')
+                                .format(snag.statusChangedAt!),
+                          ),
+                          _DetailRow(
+                            label: 'Status Changed At',
+                            value: DateFormat('hh:mm a')
+                                .format(snag.statusChangedAt!),
+                          ),
+                        ],
+                      ],
+                      if (snag.statusChangeNote != null &&
+                          snag.statusChangeNote!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Note',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF6C757D),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          snag.statusChangeNote!,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF212529),
+                          ),
+                        ),
+                      ],
+                      if (snag.statusChangePhotos.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Photos (${snag.statusChangePhotos.length})',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF6C757D),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 1,
+                          ),
+                          itemCount: snag.statusChangePhotos.length,
+                          itemBuilder: (_, i) {
+                            final url = snag.statusChangePhotos[i];
+                            return GestureDetector(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      MarkupViewerScreen.network(url: url),
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: const Color(0xFFECEFF4),
+                                    child: const Icon(Icons.broken_image,
+                                        color: Color(0xFFCED4DA)),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
             // ── Close-out section ─────────────────────────────────────────
+            // Show the card whenever the snag is closed AND we have at least
+            // one close-out artefact (note, evidence, or audit timestamps).
+            // Legacy snags without any of these still hide the card.
             if (snag.status == SnagStatus.closed &&
                 ((snag.closeNote != null && snag.closeNote!.isNotEmpty) ||
-                    snag.closeEvidenceUrls.isNotEmpty)) ...[
+                    snag.closeEvidenceUrls.isNotEmpty ||
+                    snag.closedBy != null ||
+                    snag.closedAt != null)) ...[
               const SizedBox(height: 12),
               Card(
                 color: AppTheme.statusClosed.withValues(alpha: 0.05),
@@ -271,6 +461,31 @@ class _SnagDetailScreenState extends State<SnagDetailScreen> {
                           ),
                         ],
                       ),
+                      // ── Audit trail — who closed and when ─────────────
+                      // Only rendered when we have the data, so older closed
+                      // snags don't show empty "—" rows. Reuses the same
+                      // _DetailRow widget as the "Logged By" section for a
+                      // consistent label/value look.
+                      if (snag.closedBy != null || snag.closedAt != null) ...[
+                        const SizedBox(height: 12),
+                        if (snag.closedBy != null)
+                          _DetailRow(
+                            label: 'Closed By',
+                            value: appState.resolveInspector(snag.closedBy!),
+                          ),
+                        if (snag.closedAt != null) ...[
+                          _DetailRow(
+                            label: 'Closed On',
+                            value: DateFormat('dd MMM yyyy')
+                                .format(snag.closedAt!),
+                          ),
+                          _DetailRow(
+                            label: 'Closed At',
+                            value: DateFormat('hh:mm a')
+                                .format(snag.closedAt!),
+                          ),
+                        ],
+                      ],
                       if (snag.closeNote != null &&
                           snag.closeNote!.isNotEmpty) ...[
                         const SizedBox(height: 12),
@@ -353,6 +568,33 @@ class _SnagDetailScreenState extends State<SnagDetailScreen> {
                   foregroundColor: AppTheme.primary,
                   side: BorderSide(
                       color: AppTheme.primary.withValues(alpha: 0.4)),
+                  minimumSize: const Size.fromHeight(48),
+                ),
+              ),
+            ],
+
+            // ── Viewer-only: Mark as In Progress button ───────────────────
+            // Viewers cannot use the general "Change Status" picker, but they
+            // are explicitly allowed this single transition Open → In Progress
+            // backed by a mandatory note and optional photos. Rendered only
+            // when the snag is currently Open so the button is meaningful.
+            if (canMarkInProgressAsViewer) ...[
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                icon: _savingStatus
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.play_arrow, size: 18),
+                label: Text(
+                    _savingStatus ? 'Updating...' : 'Mark as In Progress'),
+                onPressed: _savingStatus ? null : _markInProgressAsViewer,
+                style: FilledButton.styleFrom(
+                  backgroundColor: SnagStatus.inProgress.color,
+                  foregroundColor: Colors.white,
                   minimumSize: const Size.fromHeight(48),
                 ),
               ),
@@ -655,6 +897,231 @@ class _CloseNoteDialogState extends State<_CloseNoteDialog> {
                   )
               : null,
           child: const Text('Close Snag'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── In-Progress note result ───────────────────────────────────────────────────
+
+class _InProgressNoteResult {
+  final String note;
+  final List<File> files;
+  const _InProgressNoteResult({required this.note, required this.files});
+}
+
+// ── In-Progress note dialog (viewer flow) ─────────────────────────────────────
+//
+// Differs from [_CloseNoteDialog] in two important ways:
+//   1. The note is MANDATORY (close-out accepts either note OR photos).
+//   2. Photos are OPTIONAL (multiple allowed if provided).
+// We intentionally don't reuse [_CloseNoteDialog] because mixing those
+// validation rules with a flag would make both flows harder to reason about.
+
+class _InProgressNoteDialog extends StatefulWidget {
+  const _InProgressNoteDialog();
+
+  @override
+  State<_InProgressNoteDialog> createState() => _InProgressNoteDialogState();
+}
+
+class _InProgressNoteDialogState extends State<_InProgressNoteDialog> {
+  final _noteController = TextEditingController();
+  final List<File> _mediaFiles = [];
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  /// Note is mandatory; photos are optional.
+  bool get _isValid => _noteController.text.trim().isNotEmpty;
+
+  Future<void> _pickFromCamera() async {
+    final f = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1920,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+    if (f != null) setState(() => _mediaFiles.add(File(f.path)));
+  }
+
+  Future<void> _pickFromGallery() async {
+    final picked = await ImagePicker().pickMultiImage(
+      maxWidth: 1920,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+    if (picked.isNotEmpty) {
+      setState(() => _mediaFiles.addAll(picked.map((f) => File(f.path))));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.play_circle_outline, color: SnagStatus.inProgress.color),
+          const SizedBox(width: 8),
+          const Text('Mark as In Progress'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Add a note (required) and optionally attach photos before '
+              'updating this snag to In Progress.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF6C757D)),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _noteController,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Note *',
+                hintText: 'Describe the progress made so far...',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_mediaFiles.isNotEmpty) ...[
+              SizedBox(
+                height: 80,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _mediaFiles.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final file = _mediaFiles[i];
+                    return Stack(
+                      children: [
+                        GestureDetector(
+                          onTap: () async {
+                            final annotated = await Navigator.push<File>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    MarkupViewerScreen.file(file: file),
+                              ),
+                            );
+                            if (annotated != null) {
+                              setState(() => _mediaFiles[i] = annotated);
+                            }
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              file,
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 2,
+                          right: 2,
+                          child: GestureDetector(
+                            onTap: () =>
+                                setState(() => _mediaFiles.removeAt(i)),
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close,
+                                  color: Colors.white, size: 12),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 2,
+                          left: 2,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: Colors.black45,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Icon(Icons.edit_outlined,
+                                color: Colors.white, size: 10),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                  label: const Text('Camera'),
+                  onPressed: _pickFromCamera,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.secondary,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.photo_library_outlined, size: 16),
+                  label: const Text('Gallery'),
+                  onPressed: _pickFromGallery,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.secondary,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            if (!_isValid)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'A note is required.',
+                  style: TextStyle(fontSize: 12, color: Colors.red),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isValid
+              ? () => Navigator.pop(
+                    context,
+                    _InProgressNoteResult(
+                      note: _noteController.text.trim(),
+                      files: List.of(_mediaFiles),
+                    ),
+                  )
+              : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: SnagStatus.inProgress.color,
+          ),
+          child: const Text('Update Status'),
         ),
       ],
     );

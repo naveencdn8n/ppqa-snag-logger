@@ -35,6 +35,37 @@ class SnagModel {
   /// Kept separate from [mediaUrls] so original evidence is preserved.
   final List<String> closeEvidenceUrls;
 
+  /// UID of the user who closed this snag (audit trail).
+  /// Resolved to a display name via AppState.resolveInspector(), same as
+  /// [createdBy]. Empty/null for snags closed before the audit field existed.
+  final String? closedBy;
+
+  /// Timestamp of when this snag was closed (audit trail).
+  /// Null for snags closed before the audit field existed.
+  final DateTime? closedAt;
+
+  // ── In-Progress status-change fields (written when status → inProgress) ─────
+  //
+  // These fields are populated when ANY user (commonly a viewer using the
+  // dedicated "Mark as In Progress" flow) transitions a snag from Open to
+  // In Progress. Only the most recent transition is kept — earlier values
+  // are overwritten on subsequent re-transitions.
+
+  /// Mandatory note attached when changing status to In Progress.
+  final String? statusChangeNote;
+
+  /// Optional photos uploaded as evidence when changing status to In Progress.
+  /// Stored separately from [mediaUrls] and [closeEvidenceUrls] so each audit
+  /// trail keeps its own evidence.
+  final List<String> statusChangePhotos;
+
+  /// UID of the user who performed the status change (audit trail).
+  /// Resolved to a display name via AppState.resolveInspector().
+  final String? statusChangedBy;
+
+  /// Server-side timestamp of when the status was changed (audit trail).
+  final DateTime? statusChangedAt;
+
   const SnagModel({
     required this.id,
     required this.createdBy,
@@ -52,6 +83,12 @@ class SnagModel {
     this.notes,
     this.closeNote,
     this.closeEvidenceUrls = const [],
+    this.closedBy,
+    this.closedAt,
+    this.statusChangeNote,
+    this.statusChangePhotos = const [],
+    this.statusChangedBy,
+    this.statusChangedAt,
   });
 
   /// Convenience getter — first photo URL (used by list tile preview).
@@ -74,6 +111,12 @@ class SnagModel {
     String? notes,
     String? closeNote,
     List<String>? closeEvidenceUrls,
+    String? closedBy,
+    DateTime? closedAt,
+    String? statusChangeNote,
+    List<String>? statusChangePhotos,
+    String? statusChangedBy,
+    DateTime? statusChangedAt,
   }) {
     return SnagModel(
       id: id ?? this.id,
@@ -92,6 +135,12 @@ class SnagModel {
       notes: notes ?? this.notes,
       closeNote: closeNote ?? this.closeNote,
       closeEvidenceUrls: closeEvidenceUrls ?? this.closeEvidenceUrls,
+      closedBy: closedBy ?? this.closedBy,
+      closedAt: closedAt ?? this.closedAt,
+      statusChangeNote: statusChangeNote ?? this.statusChangeNote,
+      statusChangePhotos: statusChangePhotos ?? this.statusChangePhotos,
+      statusChangedBy: statusChangedBy ?? this.statusChangedBy,
+      statusChangedAt: statusChangedAt ?? this.statusChangedAt,
     );
   }
 
@@ -121,6 +170,14 @@ class SnagModel {
       'notes': notes,
       'closeNote': closeNote,
       'closeEvidenceUrls': closeEvidenceUrls,
+      'closedBy': closedBy,
+      'closedAt': closedAt == null ? null : Timestamp.fromDate(closedAt!),
+      'statusChangeNote': statusChangeNote,
+      'statusChangePhotos': statusChangePhotos,
+      'statusChangedBy': statusChangedBy,
+      'statusChangedAt': statusChangedAt == null
+          ? null
+          : Timestamp.fromDate(statusChangedAt!),
     };
   }
 
@@ -144,6 +201,23 @@ class SnagModel {
         ? List<String>.from(d['closeEvidenceUrls'] as List)
         : [];
 
+    // Close-out audit fields — backwards-compatible (legacy snags lack these).
+    // closedBy is stored as a UID string; closedAt is a Firestore Timestamp.
+    final String? closedBy = d['closedBy'] as String?;
+    final DateTime? closedAt = d['closedAt'] is Timestamp
+        ? (d['closedAt'] as Timestamp).toDate()
+        : null;
+
+    // Status-change audit fields (In Progress flow). Backwards-compatible —
+    // older snags simply don't have these keys and the model defaults apply.
+    final List<String> statusChangePhotos = d['statusChangePhotos'] is List
+        ? List<String>.from(d['statusChangePhotos'] as List)
+        : [];
+    final String? statusChangedBy = d['statusChangedBy'] as String?;
+    final DateTime? statusChangedAt = d['statusChangedAt'] is Timestamp
+        ? (d['statusChangedAt'] as Timestamp).toDate()
+        : null;
+
     return SnagModel(
       id: doc.id,
       createdBy: d['createdBy'] as String? ?? '',
@@ -163,6 +237,15 @@ class SnagModel {
       notes: d['notes'] as String?,
       closeNote: d['closeNote'] as String?,
       closeEvidenceUrls: closeEvidenceUrls,
+      closedBy: (closedBy != null && closedBy.isNotEmpty) ? closedBy : null,
+      closedAt: closedAt,
+      statusChangeNote: d['statusChangeNote'] as String?,
+      statusChangePhotos: statusChangePhotos,
+      statusChangedBy:
+          (statusChangedBy != null && statusChangedBy.isNotEmpty)
+              ? statusChangedBy
+              : null,
+      statusChangedAt: statusChangedAt,
     );
   }
 }

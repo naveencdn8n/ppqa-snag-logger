@@ -162,13 +162,16 @@ class FirestoreService {
   /// Updates the [status] field of an existing snag.
   /// When [newStatus] is [SnagStatus.closed], also uploads any
   /// [closeMediaFiles] to Firebase Storage and writes [closeNote] +
-  /// [closeEvidenceUrls] to Firestore. Original [mediaUrls] are preserved.
+  /// [closeEvidenceUrls] to Firestore, plus [closedBy] (UID of the user
+  /// performing the close) and a server-side [closedAt] timestamp for the
+  /// audit trail. Original [mediaUrls] are preserved.
   Future<void> updateSnagStatus(
     String snagId,
     String projectId,
     SnagStatus newStatus, {
     String? closeNote,
     List<File> closeMediaFiles = const [],
+    String? closedBy,
   }) async {
     final Map<String, dynamic> update = {
       'status': newStatus.firestoreValue,
@@ -189,9 +192,64 @@ class FirestoreService {
       update['closeNote'] = closeNote ?? '';
       update['closeEvidenceUrls'] =
           FieldValue.arrayUnion(urls.whereType<String>().toList());
+      // Audit trail: who closed this snag and exactly when.
+      // closedAt uses a server timestamp so clock skew on the device cannot
+      // mis-stamp the close. closedBy is the caller's Firebase UID, resolved
+      // to a display name in the UI via the existing users map.
+      update['closedBy'] = closedBy ?? '';
+      update['closedAt'] = FieldValue.serverTimestamp();
     }
 
     await _snagsRef(projectId).doc(snagId).update(update);
+  }
+
+  // ── Write: mark snag as In Progress (viewer flow + general use) ───────────
+
+  /// Transitions a snag's status to [SnagStatus.inProgress] and records a
+  /// full audit trail: who changed it, when, the mandatory note, and any
+  /// optional photo evidence.
+  ///
+  /// This is the dedicated method used by the viewer "Mark as In Progress"
+  /// flow. It enforces no business rules itself — Firestore security rules
+  /// gate which roles may invoke it and which starting status is allowed
+  /// (currently: only when the snag is in [SnagStatus.open]).
+  ///
+  /// Only the most recent transition is preserved — earlier values are
+  /// overwritten. Audit fields are namespaced `statusChange*` so they don't
+  /// collide with the close-out audit (`closedBy` / `closedAt`).
+  Future<void> markSnagInProgress(
+    String snagId,
+    String projectId, {
+    required String note,
+    required String changedBy,
+    List<File> photos = const [],
+  }) async {
+    // Upload photo evidence in parallel (if any). Each upload is bounded
+    // by the same _uploadMedia timeout chain used for close-out evidence.
+    final urls = photos.isEmpty
+        ? <String>[]
+        : (await Future.wait(
+            photos.asMap().entries.map(
+                  (e) => _uploadMedia(
+                    e.value,
+                    '${snagId}_inprogress',
+                    projectId: projectId,
+                    index: e.key,
+                  ),
+                ),
+          ))
+            .whereType<String>()
+            .toList();
+
+    await _snagsRef(projectId).doc(snagId).update({
+      'status': SnagStatus.inProgress.firestoreValue,
+      'statusChangeNote': note,
+      // Replace (not arrayUnion) so re-transitions overwrite older photos —
+      // we keep only the most recent transition's evidence, per spec.
+      'statusChangePhotos': urls,
+      'statusChangedBy': changedBy,
+      'statusChangedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // ── Write: append media URLs (used after offline upload) ──────────────────
