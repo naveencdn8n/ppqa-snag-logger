@@ -309,8 +309,11 @@ class AppState extends ChangeNotifier {
       }
 
       notifyListeners();
-    }, onError: (_) {
+    }, onError: (e) {
+      _projectsSubscription?.cancel();
+      _projectsSubscription = null;
       _projectsLoading = false;
+      debugPrint('[AppState] projectsStream error: $e');
       notifyListeners();
     });
   }
@@ -329,7 +332,17 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       },
       onError: (e) {
-        _syncError = 'Failed to load snags: $e';
+        // Cancel the broken subscription — a permission-denied stream won't
+        // recover on its own and retrying it repeatedly wastes battery / quota.
+        _snagsSubscription?.cancel();
+        _snagsSubscription = null;
+        final isPermissionDenied =
+            e.toString().contains('permission-denied') ||
+            e.toString().contains('PERMISSION_DENIED');
+        _syncError = isPermissionDenied
+            ? 'Access denied — contact your project administrator.'
+            : 'Failed to load snags: $e';
+        debugPrint('[AppState] snagsStream error: $e');
         notifyListeners();
       },
     );
@@ -346,8 +359,11 @@ class AppState extends ChangeNotifier {
         _configLoading = false;
         notifyListeners();
       },
-      onError: (_) {
+      onError: (e) {
+        _tradesSubscription?.cancel();
+        _tradesSubscription = null;
         _configLoading = false;
+        debugPrint('[AppState] tradesStream error: $e');
         notifyListeners();
       },
     );
@@ -358,15 +374,30 @@ class AppState extends ChangeNotifier {
         _locations = locations;
         notifyListeners();
       },
+      onError: (e) {
+        _locationsSubscription?.cancel();
+        _locationsSubscription = null;
+        debugPrint('[AppState] locationsStream error: $e');
+        notifyListeners();
+      },
     );
   }
 
   void _subscribeToUsers() {
     _usersSubscription?.cancel();
-    _usersSubscription = _service.usersStream.listen((profiles) {
-      _userProfiles = profiles;
-      notifyListeners();
-    });
+    _usersSubscription = _service.usersStream.listen(
+      (profiles) {
+        _userProfiles = profiles;
+        notifyListeners();
+      },
+      onError: (e) {
+        // User profile stream is best-effort — errors here are non-fatal.
+        // Cancel to avoid repeated permission-denied retries.
+        _usersSubscription?.cancel();
+        _usersSubscription = null;
+        debugPrint('[AppState] usersStream error: $e');
+      },
+    );
   }
 
   /// Cancels snag / config / users subscriptions.

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -62,37 +63,71 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
 
   Future<void> _pickFromCamera() async {
     if (_mediaFiles.length >= _maxMedia) return;
-    final f = await ImagePicker().pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      maxHeight: 1080,
-      imageQuality: 85,
-    );
-    if (f != null) setState(() => _mediaFiles.add(f));
+    try {
+      final f = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (f != null) setState(() => _mediaFiles.add(f));
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      _showPermissionSnackBar(e.code);
+    }
   }
 
   Future<void> _pickFromGallery() async {
     if (_mediaFiles.length >= _maxMedia) return;
     final remaining = _maxMedia - _mediaFiles.length;
-    final picked = await ImagePicker().pickMultiImage(
-      maxWidth: 1920,
-      maxHeight: 1080,
-      imageQuality: 85,
-    );
-    if (picked.isNotEmpty) {
-      setState(() {
-        _mediaFiles.addAll(picked.take(remaining));
-      });
+    try {
+      final picked = await ImagePicker().pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (picked.isNotEmpty) {
+        setState(() {
+          _mediaFiles.addAll(picked.take(remaining));
+        });
+      }
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      _showPermissionSnackBar(e.code);
     }
   }
 
   Future<void> _pickVideo() async {
     if (_mediaFiles.length >= _maxMedia) return;
-    final f = await ImagePicker().pickVideo(
-      source: ImageSource.camera,
-      maxDuration: const Duration(minutes: 2),
+    try {
+      final f = await ImagePicker().pickVideo(
+        source: ImageSource.camera,
+        maxDuration: const Duration(minutes: 2),
+      );
+      if (f != null) setState(() => _mediaFiles.add(f));
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      _showPermissionSnackBar(e.code);
+    }
+  }
+
+  void _showPermissionSnackBar(String code) {
+    final msg = switch (code) {
+      'camera_access_denied' =>
+        'Camera permission denied. Enable it in Settings → App Permissions.',
+      'photo_access_denied' =>
+        'Photo library access denied. Enable it in Settings → App Permissions.',
+      _ => 'Could not access media. Please check your app permissions.',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        action: SnackBarAction(
+          label: 'OK',
+          onPressed: () {},
+        ),
+      ),
     );
-    if (f != null) setState(() => _mediaFiles.add(f));
   }
 
   void _removeMedia(int index) =>

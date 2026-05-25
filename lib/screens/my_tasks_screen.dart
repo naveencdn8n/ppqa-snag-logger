@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -823,24 +824,50 @@ class _CloseNoteDialogState extends State<_CloseNoteDialog> {
       _noteController.text.trim().isNotEmpty || _mediaFiles.isNotEmpty;
 
   Future<void> _pickFromCamera() async {
-    final f = await ImagePicker().pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      maxHeight: 1080,
-      imageQuality: 85,
-    );
-    if (f != null) setState(() => _mediaFiles.add(File(f.path)));
+    try {
+      final f = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (f != null && mounted) setState(() => _mediaFiles.add(File(f.path)));
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      _showPermissionSnackBar(context, e.code);
+    }
   }
 
   Future<void> _pickFromGallery() async {
-    final picked = await ImagePicker().pickMultiImage(
-      maxWidth: 1920,
-      maxHeight: 1080,
-      imageQuality: 85,
-    );
-    if (picked.isNotEmpty) {
-      setState(() => _mediaFiles.addAll(picked.map((f) => File(f.path))));
+    try {
+      final picked = await ImagePicker().pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (picked.isNotEmpty && mounted) {
+        setState(() => _mediaFiles.addAll(picked.map((f) => File(f.path))));
+      }
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      _showPermissionSnackBar(context, e.code);
     }
+  }
+
+  void _showPermissionSnackBar(BuildContext ctx, String code) {
+    final msg = switch (code) {
+      'camera_access_denied' =>
+        'Camera permission denied. Enable it in Settings → App Permissions.',
+      'photo_access_denied' =>
+        'Photo library access denied. Enable it in Settings → App Permissions.',
+      _ => 'Could not access media. Please check your app permissions.',
+    };
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        action: SnackBarAction(label: 'OK', onPressed: () {}),
+      ),
+    );
   }
 
   @override
