@@ -195,12 +195,12 @@ class _MarkupViewerScreenState extends State<MarkupViewerScreen> {
           IconButton(
             icon: const Icon(Icons.undo),
             tooltip: 'Undo last stroke',
-            onPressed: () => _controller.undo(),
+            onPressed: _saving ? null : () => _controller.undo(),
           ),
           IconButton(
             icon: const Icon(Icons.clear_all),
             tooltip: 'Clear all annotations',
-            onPressed: () async {
+            onPressed: _saving ? null : () async {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (dialogContext) => AlertDialog(
