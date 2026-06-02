@@ -203,19 +203,19 @@ class _MarkupViewerScreenState extends State<MarkupViewerScreen> {
             onPressed: () async {
               final confirmed = await showDialog<bool>(
                 context: context,
-                builder: (_) => AlertDialog(
+                builder: (dialogContext) => AlertDialog(
                   title: const Text('Clear all?'),
                   content:
                       const Text('Remove all markup from this photo?'),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(context, false),
+                      onPressed: () => Navigator.pop(dialogContext, false),
                       child: const Text('Cancel'),
                     ),
                     FilledButton(
                       style: FilledButton.styleFrom(
                           backgroundColor: Colors.red.shade700),
-                      onPressed: () => Navigator.pop(context, true),
+                      onPressed: () => Navigator.pop(dialogContext, true),
                       child: const Text('Clear'),
                     ),
                   ],
