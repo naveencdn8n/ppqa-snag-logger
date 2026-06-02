@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/snag_model.dart';
 import '../models/app_enums.dart';
+import '../models/snag_model.dart';
+import '../services/pdf_export_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ppqa_app_bar.dart';
@@ -18,10 +19,24 @@ class OpenSnagsScreen extends StatefulWidget {
 }
 
 class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
+  // ── Export state ──────────────────────────────────────────────────────────
+  bool _isPdfExporting = false;
+
+  // ── Filter state ──────────────────────────────────────────────────────────
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
+
   String? _selectedLocation;
   String? _selectedFloor;
-  // null = All statuses; otherwise filter to this status
-  SnagStatus? _selectedStatus = SnagStatus.open; // default: Open
+  String? _selectedTrade;
+  SnagStatus? _selectedStatus = SnagStatus.open; // default: Open only
+  SnagSeverity? _selectedSeverity;              // null = Any severity
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   // ── Filter helpers ────────────────────────────────────────────────────────
 
@@ -34,26 +49,105 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
   }
 
   List<SnagModel> _applyFilters(List<SnagModel> all) {
+    final query = _searchQuery.trim().toLowerCase();
     return all.where((s) {
-      if (_selectedLocation != null && s.location != _selectedLocation) {
-        return false;
-      }
+      if (_selectedLocation != null && s.location != _selectedLocation) return false;
       if (_selectedFloor != null && s.floorNo != _selectedFloor) return false;
       if (_selectedStatus != null && s.status != _selectedStatus) return false;
+      if (_selectedSeverity != null && s.severity != _selectedSeverity) return false;
+      if (_selectedTrade != null && s.trade != _selectedTrade) return false;
+      if (query.isNotEmpty) {
+        final hit =
+            s.defectDescription.toLowerCase().contains(query) ||
+            s.trade.toLowerCase().contains(query) ||
+            s.flatNo.toLowerCase().contains(query) ||
+            s.element.toLowerCase().contains(query) ||
+            s.floorNo.toLowerCase().contains(query) ||
+            s.room.toLowerCase().contains(query) ||
+            (s.notes?.toLowerCase().contains(query) ?? false);
+        if (!hit) return false;
+      }
       return true;
     }).toList();
   }
 
-  void _clearFilters() => setState(() {
-        _selectedLocation = null;
-        _selectedFloor = null;
-        _selectedStatus = SnagStatus.open;
-      });
+  void _clearFilters() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _selectedLocation = null;
+      _selectedFloor = null;
+      _selectedTrade = null;
+      _selectedStatus = SnagStatus.open;
+      _selectedSeverity = null;
+    });
+  }
 
   bool get _hasActiveFilter =>
+      _searchQuery.isNotEmpty ||
       _selectedLocation != null ||
       _selectedFloor != null ||
-      _selectedStatus != SnagStatus.open;
+      _selectedTrade != null ||
+      _selectedStatus != SnagStatus.open ||
+      _selectedSeverity != null;
+
+  int get _activeFilterCount {
+    int n = 0;
+    if (_searchQuery.isNotEmpty) n++;
+    if (_selectedLocation != null) n++;
+    if (_selectedFloor != null) n++;
+    if (_selectedTrade != null) n++;
+    if (_selectedStatus != SnagStatus.open) n++;
+    if (_selectedSeverity != null) n++;
+    return n;
+  }
+
+  // ── PDF export ───────────────────────────────────────────────────────────
+
+  Future<void> _exportToPdf(
+      List<SnagModel> filtered, Map<String, int> serialMap, AppState appState) async {
+    if (filtered.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No snags to export — adjust your filters first.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isPdfExporting = true);
+    try {
+      // Build a human-readable filter label for the PDF header.
+      final parts = <String>[];
+      if (_selectedStatus != null)   parts.add(_selectedStatus!.label);
+      if (_selectedSeverity != null) parts.add(_selectedSeverity!.label);
+      if (_selectedLocation != null) parts.add(_selectedLocation!);
+      if (_selectedFloor != null)    parts.add('Floor $_selectedFloor');
+      if (_selectedTrade != null)    parts.add(_selectedTrade!);
+      if (_searchQuery.isNotEmpty)   parts.add('"$_searchQuery"');
+      final filterLabel = parts.isEmpty ? 'All snags' : parts.join(' · ');
+
+      await PdfExportService.shareSnagReport(
+        snags: filtered,
+        serialMap: serialMap,
+        projectName: appState.activeProject?.name ?? 'PPQA Project',
+        filterLabel: filterLabel,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PDF export failed: $e'),
+          backgroundColor: const Color(0xFFB71C1C),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isPdfExporting = false);
+    }
+  }
 
   // ── Grouping ──────────────────────────────────────────────────────────────
 
@@ -61,8 +155,8 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
   Map<String, Map<String, List<SnagModel>>> _group(List<SnagModel> snags) {
     final Map<String, Map<String, List<SnagModel>>> result = {};
     for (final s in snags) {
-      final loc = s.location.isEmpty ? 'Unknown Location' : s.location;
-      final floor = s.floorNo.isEmpty ? '—' : 'Floor ${s.floorNo}';
+      final loc   = s.location.isEmpty ? 'Unknown Location' : s.location;
+      final floor = s.floorNo.isEmpty  ? '—'               : 'Floor ${s.floorNo}';
       result.putIfAbsent(loc, () => {});
       result[loc]!.putIfAbsent(floor, () => []);
       result[loc]![floor]!.add(s);
@@ -72,26 +166,89 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
-    final allSnags = appState.snags;
-    final serialMap = appState.snagSerialMap;
-    final filtered = _applyFilters(allSnags.toList());
-    final grouped = _group(filtered);
+    final appState      = context.watch<AppState>();
+    final allSnags      = appState.snags;
+    final serialMap     = appState.snagSerialMap;
+    final filtered      = _applyFilters(allSnags.toList());
+    final grouped       = _group(filtered);
 
     final locationNames = appState.locations.map((l) => l.name).toList();
-    final floors = _floorsFor(appState);
+    final tradeNames    = appState.trades.map((t) => t.name).toList();
+    final floors        = _floorsFor(appState);
 
     return Scaffold(
-      appBar: const PPQAAppBar(title: 'Open Snags'),
+      appBar: PPQAAppBar(
+        title: 'Open Snags',
+        actions: [
+          _isPdfExporting
+              ? const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2.5),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.picture_as_pdf_outlined,
+                      color: Colors.white),
+                  tooltip: 'Export filtered snags to PDF',
+                  onPressed: () =>
+                      _exportToPdf(filtered, serialMap, appState),
+                ),
+        ],
+      ),
       body: Column(
         children: [
-          // ── Filter bar ───────────────────────────────────────────────────
+          // ── Filter panel ─────────────────────────────────────────────────
           Container(
             color: const Color(0xFFECEFF4),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Row 1: Location + Floor dropdowns
+                // ── Search bar ───────────────────────────────────────────
+                TextField(
+                  controller: _searchController,
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'Search description, trade, unit…',
+                    hintStyle: const TextStyle(fontSize: 13),
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF1A3A5C), width: 1.5),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // ── Location + Floor ─────────────────────────────────────
                 Row(
                   children: [
                     Expanded(
@@ -103,7 +260,7 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
                         hint: 'All locations',
                         onChanged: (val) => setState(() {
                           _selectedLocation = val;
-                          _selectedFloor = null; // reset floor when location changes
+                          _selectedFloor = null;
                         }),
                       ),
                     ),
@@ -124,16 +281,31 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
                     ),
                   ],
                 ),
+
+                const SizedBox(height: 8),
+
+                // ── Trade ────────────────────────────────────────────────
+                PPQADropdown<String>(
+                  label: 'Trade',
+                  value: _selectedTrade,
+                  items: tradeNames,
+                  labelBuilder: (t) => t,
+                  hint: 'All trades',
+                  onChanged: tradeNames.isEmpty
+                      ? null
+                      : (val) => setState(() => _selectedTrade = val),
+                ),
+
                 const SizedBox(height: 10),
 
-                // Row 2: Status chips
+                // ── Status chips ─────────────────────────────────────────
                 SizedBox(
                   width: double.infinity,
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        _StatusChip(
+                        _FilterChip(
                           label: 'All',
                           selected: _selectedStatus == null,
                           color: const Color(0xFF546E7A),
@@ -142,12 +314,44 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
                         ),
                         const SizedBox(width: 8),
                         for (final status in SnagStatus.values) ...[
-                          _StatusChip(
+                          _FilterChip(
                             label: status.label,
                             selected: _selectedStatus == status,
                             color: status.color,
                             onTap: () =>
                                 setState(() => _selectedStatus = status),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // ── Severity chips ───────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _FilterChip(
+                          label: 'Any severity',
+                          selected: _selectedSeverity == null,
+                          color: const Color(0xFF546E7A),
+                          onTap: () =>
+                              setState(() => _selectedSeverity = null),
+                        ),
+                        const SizedBox(width: 8),
+                        for (final sev in SnagSeverity.values) ...[
+                          _FilterChip(
+                            label: sev.label,
+                            selected: _selectedSeverity == sev,
+                            color: sev.color,
+                            onTap: () =>
+                                setState(() => _selectedSeverity = sev),
                           ),
                           const SizedBox(width: 8),
                         ],
@@ -161,7 +365,7 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
 
           // ── Results bar ──────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -176,7 +380,7 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
                 if (_hasActiveFilter)
                   TextButton.icon(
                     icon: const Icon(Icons.clear, size: 16),
-                    label: const Text('Reset'),
+                    label: Text('Reset${_activeFilterCount > 1 ? ' ($_activeFilterCount)' : ''}'),
                     onPressed: _clearFilters,
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.secondary,
@@ -192,7 +396,7 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
           // ── Grouped list ─────────────────────────────────────────────────
           Expanded(
             child: filtered.isEmpty
-                ? _EmptyState(hasSnags: allSnags.isNotEmpty)
+                ? _EmptyState(hasSnags: allSnags.isNotEmpty, isSearching: _searchQuery.isNotEmpty)
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: _countItems(grouped),
@@ -207,8 +411,6 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
 
   // ── Flat index → grouped item builder ────────────────────────────────────
 
-  /// Flattens the nested map into a list of items:
-  /// LocationHeader | FloorHeader | SnagTile | SnagTile | FloorHeader | ...
   int _countItems(Map<String, Map<String, List<SnagModel>>> grouped) {
     int count = 0;
     for (final floors in grouped.values) {
@@ -258,17 +460,18 @@ class _OpenSnagsScreenState extends State<OpenSnagsScreen> {
 
 // ── Sub-widgets ───────────────────────────────────────────────────────────────
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
+/// Generic filter chip used for both Status and Severity rows.
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
     required this.label,
     required this.selected,
     required this.color,
     required this.onTap,
   });
 
-  final String label;
-  final bool selected;
-  final Color color;
+  final String       label;
+  final bool         selected;
+  final Color        color;
   final VoidCallback onTap;
 
   @override
@@ -320,7 +523,8 @@ class _LocationHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          const Expanded(child: Divider(color: Color(0xFF1A3A5C), thickness: 0.5)),
+          const Expanded(
+              child: Divider(color: Color(0xFF1A3A5C), thickness: 0.5)),
         ],
       ),
     );
@@ -354,27 +558,35 @@ class _FloorHeader extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.hasSnags});
+  const _EmptyState({required this.hasSnags, required this.isSearching});
   final bool hasSnags;
+  final bool isSearching;
 
   @override
   Widget build(BuildContext context) {
+    final String message;
+    final IconData icon;
+
+    if (isSearching) {
+      message = 'No snags match your search.\nTry different keywords.';
+      icon = Icons.search_off;
+    } else if (hasSnags) {
+      message =
+          'No snags match the selected filters.\nTry changing status, severity, or location.';
+      icon = Icons.check_circle_outline;
+    } else {
+      message = 'No snags logged yet.\nTap "Log Snag" to get started.';
+      icon = Icons.format_list_bulleted;
+    }
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            hasSnags
-                ? Icons.check_circle_outline
-                : Icons.format_list_bulleted,
-            size: 72,
-            color: const Color(0xFFCED4DA),
-          ),
+          Icon(icon, size: 72, color: const Color(0xFFCED4DA)),
           const SizedBox(height: 16),
           Text(
-            hasSnags
-                ? 'No snags match the selected filters.\nTry changing the status or location.'
-                : 'No snags logged yet.\nTap "Log Snag" to get started.',
+            message,
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF6C757D),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_enums.dart';
+import '../services/pdf_export_service.dart';
 import '../services/sheets_export_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -16,7 +17,8 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
-  bool _isExporting = false;
+  bool _isExporting    = false;
+  bool _isPdfExporting = false;
   final _sheetsService = SheetsExportService();
 
   // ── Export ─────────────────────────────────────────────────────────────────
@@ -48,6 +50,30 @@ class _ReportScreenState extends State<ReportScreen> {
       );
     } finally {
       if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  Future<void> _exportToPdf() async {
+    final appState = context.read<AppState>();
+    setState(() => _isPdfExporting = true);
+    try {
+      await PdfExportService.shareSnagReport(
+        snags: appState.snags,
+        serialMap: appState.snagSerialMap,
+        projectName: appState.activeProject?.name ?? 'PPQA Project',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PDF export failed: $e'),
+          backgroundColor: AppTheme.severityRedLine,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isPdfExporting = false);
     }
   }
 
@@ -129,6 +155,18 @@ class _ReportScreenState extends State<ReportScreen> {
               MaterialPageRoute(
                   builder: (_) => const WeeklyProgressScreen()),
             ),
+          ),
+          const SizedBox(height: 16),
+          const _ReportSectionHeader(text: 'Export'),
+          const SizedBox(height: 8),
+          _ReportNavTile(
+            icon: Icons.picture_as_pdf_outlined,
+            iconColor: const Color(0xFFD32F2F),
+            label: 'Export PDF Report',
+            subtitle: _isPdfExporting
+                ? 'Generating PDF…'
+                : 'All snags — share or print',
+            onTap: _isPdfExporting ? () {} : _exportToPdf,
           ),
         ],
       ),
