@@ -72,12 +72,20 @@ class PdfExportService {
           SnagStatus.void_      => const PdfColor.fromInt(0xFF78909C),
         };
 
+    // ── Sort chronologically (#1 first) ──────────────────────────────────
+    final sorted = [...snags]
+      ..sort((a, b) {
+        final sa = serialMap[a.id] ?? 999999;
+        final sb = serialMap[b.id] ?? 999999;
+        return sa.compareTo(sb);
+      });
+
     // ── Stats ─────────────────────────────────────────────────────────────
     final now         = DateTime.now();
     final dateStr     = DateFormat('dd MMM yyyy, HH:mm').format(now);
     final byStatus    = <SnagStatus, int>{};
     final bySeverity  = <SnagSeverity, int>{};
-    for (final s in snags) {
+    for (final s in sorted) {
       byStatus[s.status]     = (byStatus[s.status] ?? 0) + 1;
       bySeverity[s.severity] = (bySeverity[s.severity] ?? 0) + 1;
     }
@@ -221,7 +229,7 @@ class PdfExportService {
               pw.Row(
                 children: [
                   pw.Expanded(
-                    child: summaryCard('Total Snags', '${snags.length}',
+                    child: summaryCard('Total Snags', '${sorted.length}',
                         const PdfColor.fromInt(0xFF1A3A5C)),
                   ),
                   pw.SizedBox(width: 8),
@@ -297,7 +305,7 @@ class PdfExportService {
         ),
         build: (ctx) => [
           // ── Snag rows ────────────────────────────────────────────────
-          if (snags.isEmpty)
+          if (sorted.isEmpty)
             pw.Padding(
               padding: const pw.EdgeInsets.all(24),
               child: pw.Center(
@@ -308,7 +316,7 @@ class PdfExportService {
               ),
             )
           else
-            ...snags.asMap().entries.map((entry) {
+            ...sorted.asMap().entries.map((entry) {
               final idx  = entry.key;
               final snag = entry.value;
               final serial = serialMap[snag.id];
