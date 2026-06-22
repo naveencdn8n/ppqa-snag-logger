@@ -70,7 +70,10 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
         maxHeight: 1080,
         imageQuality: 85,
       );
-      if (f != null) setState(() => _mediaFiles.add(f));
+      if (f != null) {
+        if (!mounted) return;
+        setState(() => _mediaFiles.add(f));
+      }
     } on PlatformException catch (e) {
       if (!mounted) return;
       _showPermissionSnackBar(e.code);
@@ -87,6 +90,7 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
         imageQuality: 85,
       );
       if (picked.isNotEmpty) {
+        if (!mounted) return;
         setState(() {
           _mediaFiles.addAll(picked.take(remaining));
         });
@@ -104,7 +108,10 @@ class _LogSnagScreenState extends State<LogSnagScreen> {
         source: ImageSource.camera,
         maxDuration: const Duration(minutes: 2),
       );
-      if (f != null) setState(() => _mediaFiles.add(f));
+      if (f != null) {
+        if (!mounted) return;
+        setState(() => _mediaFiles.add(f));
+      }
     } on PlatformException catch (e) {
       if (!mounted) return;
       _showPermissionSnackBar(e.code);
